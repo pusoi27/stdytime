@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4" style="max-width:600px;">
+  <h4>{{ action }} Student</h4>
+  <form method="post">
+    <div class="mb-2">
+      <label class="form-label">Name</label>
+      <input name="name" class="form-control" value="{{ student[1] if student else '' }}" required>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Subject</label>
+      <input name="subject" class="form-control" value="{{ student[2] if student else '' }}">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Level</label>
+      <input name="level" class="form-control" value="{{ student[3] if student else '' }}">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Email</label>
+      <input name="email" type="email" class="form-control" value="{{ student[4] if student else '' }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Phone</label>
+      <input name="phone" class="form-control" value="{{ student[5] if student else '' }}">
+    </div>
+    <button type="submit" class="btn btn-primary">{{ action }}</button>
+    <a href="{{ url_for('students_list') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{% endblock %}

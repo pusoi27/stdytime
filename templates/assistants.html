@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h4 class="mb-3 text-primary">Assistants</h4>
+
+  <!-- Add button -->
+  <div class="mb-2">
+    <a href="{{ url_for('assistants_add') }}" class="btn btn-success btn-sm">Add Assistant</a>
+    <form action="{{ url_for('qr_assistants_generate_all') }}" method="post" class="d-inline">
+      <button type="submit" class="btn btn-outline-primary btn-sm">Generate All QRs</button>
+    </form>
+    <a href="{{ url_for('qr_assistants_pdf') }}" class="btn btn-outline-secondary btn-sm">Print Assistant QRs (Avery 8163)</a>
+  </div>
+
+  <table class="table table-sm table-striped align-middle">
+    <thead class="table-primary">
+      <tr>
+        <th>ID</th><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>QR</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assistants %}
+      <tr>
+        <td>{{ a[0] }}</td>
+        <td>{{ a[1] }}</td>
+        <td>{{ a[2] }}</td>
+        <td>{{ a[3] }}</td>
+        <td>{{ a[4] }}</td>
+        <td>
+          {% set qr_file = 'assistant_' ~ a[0] ~ '.png' %}
+          <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="64" height="64" onerror="this.src='/static/img/default.png'">
+        </td>
+        <td>
+          <form action="{{ url_for('qr_assistant_generate', aid=a[0]) }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Generate QR</button>
+          </form>
+          <a href="{{ url_for('assistants_edit', aid=a[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
+          <a href="{{ url_for('assistants_delete', aid=a[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete assistant?');">Del</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

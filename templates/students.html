@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h4 class="mb-3 text-primary">Student Database</h4>
+
+  <!-- Add button -->
+  <div class="mb-2">
+    <a href="{{ url_for('students_add') }}" class="btn btn-success btn-sm">Add Student</a>
+    <a href="{{ url_for('students_export') }}" class="btn btn-outline-primary btn-sm">Export CSV</a>
+    <form action="{{ url_for('students_import') }}" method="post" enctype="multipart/form-data" class="d-inline">
+      <input type="file" name="csvfile" accept=".csv" required>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Import CSV</button>
+    </form>
+  </div>
+
+  <table class="table table-sm table-striped align-middle">
+    <thead class="table-primary">
+      <tr>
+        <th>ID</th><th>Name</th><th>Subject</th><th>Level</th><th>Email</th><th>Phone</th><th>Photo</th><th>QR</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in students %}
+      <tr>
+        <td>{{ s[0] }}</td>
+        <td>{{ s[1] }}</td>
+        <td>{{ s[2] }}</td>
+        <td>{{ s[3] }}</td>
+        <td>{{ s[4] }}</td>
+        <td>{{ s[5] }}</td>
+        <td>
+          {% if s[6] %}
+            <img src="/static/img/students/{{ s[6] }}" alt="photo" width="48" height="48" class="rounded-circle">
+          {% else %}
+            <img src="/static/img/default.png" alt="default" width="48" height="48" class="rounded-circle">
+          {% endif %}
+        </td>
+        <td>
+          {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
+          <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'">
+        </td>
+        <td>
+          <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
+          <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete student?');">Del</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

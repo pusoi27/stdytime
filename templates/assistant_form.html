@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4" style="max-width:600px;">
+  <h4>{{ action }} Assistant</h4>
+  <form method="post">
+    <div class="mb-2">
+      <label class="form-label">Name</label>
+      <input name="name" class="form-control" value="{{ assistant[1] if assistant else '' }}" required>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Role</label>
+      <input name="role" class="form-control" value="{{ assistant[2] if assistant else '' }}">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Email</label>
+      <input name="email" type="email" class="form-control" value="{{ assistant[3] if assistant else '' }}">
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Phone</label>
+      <input name="phone" class="form-control" value="{{ assistant[4] if assistant else '' }}">
+    </div>
+    <button type="submit" class="btn btn-primary">{{ action }}</button>
+    <a href="{{ url_for('assistants_list') }}" class="btn btn-secondary">Cancel</a>
+  </form>
+</div>
+{% endblock %}

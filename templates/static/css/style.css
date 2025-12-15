@@ -1,0 +1,88 @@
+/* static/css/style.css */
+
+body {
+  background-color: #f8f9fb;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.navbar {
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.card {
+  border-radius: 10px;
+}
+
+.student-card {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.student-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0,0,0,.15);
+}
+
+.hover-bg:hover {
+  background-color: #f0f4ff;
+}
+
+.list-group-item {
+  border: none;
+  border-bottom: 1px solid #f1f1f1;
+}
+
+.text-primary { color: #0d6efd !important; }
+.text-success { color: #198754 !important; }
+.text-danger  { color: #dc3545 !important; }
+.hover-bg:hover { background-color: #eef5ff; cursor: pointer; }
+.hover-scale:hover { transform: scale(1.02); cursor: pointer; }
+.overflow-auto::-webkit-scrollbar { width: 6px; }
+.overflow-auto::-webkit-scrollbar-thumb {
+  background-color: #cfd4da;
+  border-radius: 6px;
+}
+.timer { transition: color 0.3s ease; }
+.hover-scale { cursor: pointer; transition: transform .2s ease; }
+.hover-scale:hover { transform: scale(1.03); }
+
+.seat-card {
+  min-height: 110px;
+  padding: .6rem;
+  transition: transform 0.1s ease;
+}
+.seat-card:hover {
+  transform: translateY(-2px);
+  cursor: pointer;
+}
+.seat-empty {
+  min-height: 110px;
+  padding: .6rem;
+  background-color: #f9fafb;
+  color: #bbb;
+}
+.timer.text-danger {
+  color: #dc3545 !important;
+}
+.timer.text-success {
+  color: #198754 !important;
+}
+html, body {
+  height: 100%;
+  margin: 0;
+}
+.vh-100 { height: 100vh !important; }
+
+.card {
+  border-radius: 10px;
+}
+#seatGrid::-webkit-scrollbar,
+#studentList::-webkit-scrollbar,
+#checkedList::-webkit-scrollbar {
+  width: 6px;
+}
+#seatGrid::-webkit-scrollbar-thumb,
+#studentList::-webkit-scrollbar-thumb,
+#checkedList::-webkit-scrollbar-thumb {
+  background-color: #ced4da;
+  border-radius: 6px;
+}

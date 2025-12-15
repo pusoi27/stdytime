@@ -1,0 +1,245 @@
+<script>
+const SEAT_LIMIT = 20;
+const DURATION_LIMITS = { "S1": 30*60, "S2": 60*60 };
+
+function formatHHMMSS(sec){
+  const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
+  return [h,m,s].map(v=>String(v).padStart(2,"0")).join(":");
+}
+function formatSessionTime(seconds){
+  const mins=Math.floor(seconds/60), h=Math.floor(mins/60), m=mins%60;
+  return `${h} h ${m} m`;
+}
+
+function updateAllPhotos(students){
+  console.debug('[dashboard] updateAllPhotos called for', students.length, 'students');
+  students.forEach(s=>{
+    const imgs = document.querySelectorAll(`img[data-sid="${s.id}"]`);
+    console.debug(`[dashboard] updating photos for id=${s.id} name=${s.name} photo=${s.photo} imgs=${imgs.length}`);
+    imgs.forEach(img=>{
+      if(s.photo){
+        const newsrc = `/static/img/students/${s.photo}?v=${Date.now()}`;
+        console.debug('[dashboard] set src for', s.id, newsrc);
+        img.src = newsrc;
+        img.onerror = ()=>{ img.src = '/static/img/default.png'; };
+      }else{
+        // try a few candidate filenames derived from the student name
+        const candidates = [
+          `/static/img/students/${encodeURIComponent(s.name)}.png?v=${Date.now()}`,
+          `/static/img/students/${encodeURIComponent(s.name)}..png?v=${Date.now()}`
+        ];
+        let i=0;
+        img.onerror = ()=>{ i++; if(i<candidates.length) { console.debug('[dashboard] trying candidate', candidates[i]); img.src=candidates[i]; } else { img.src='/static/img/default.png'; } };
+        console.debug('[dashboard] trying candidate', candidates[0]);
+        img.src = candidates[0];
+      }
+    });
+  });
+}
+
+async function fetchDashboardData(){
+
+  const resAll=await fetch('/api/students/list');
+  const students=await resAll.json();
+  const resSess=await fetch('/api/sessions/active');
+  const sessions=await resSess.json();
+  const resAssist=await fetch('/api/assistants/list');
+  const assistants=await resAssist.json();
+  buildStudentList(students);
+  buildSeatGrid(sessions);
+  buildCheckedList(students);
+  buildAssistantsList(assistants);
+  // After rebuilding DOM, ensure images are refreshed (cache-bust)
+  updateAllPhotos(students);
+}
+// ---------- Column 2 (Assistants) ----------
+function buildAssistantsList(assistants){
+  const section = document.getElementById("assistantsOnDutySection");
+  const list = document.getElementById("assistantsDutyList");
+  const onDuty = assistants.filter(a => a.on_duty);
+  
+  if(onDuty.length === 0){
+    section.style.display = "none";
+    return;
+  }
+  
+  section.style.display = "block";
+  list.innerHTML = "";
+  onDuty.forEach(a => {
+    const div = document.createElement("div");
+    div.className = "col-auto";
+    const start = a.start_time ? new Date(a.start_time) : new Date();
+    const timerId = `timer_assist_${a.id}`;
+    div.innerHTML = `
+      <div class="card p-1 border-info bg-light" style="min-width:140px;">
+        <div class="fw-bold text-dark" style="font-size:0.95em; line-height:1.2;">
+          <i class="bi bi-person-badge"></i> ${a.name}
+        </div>
+        ${a.role ? '<small class="text-muted" style="line-height:1.2;">' + a.role + '</small>' : ''}
+        <div class="timer-assist fw-bold text-info" id="${timerId}" style="font-size:0.9em; margin-top:2px; line-height:1.2;">00:00:00</div>
+      </div>
+    `;
+    list.appendChild(div);
+    
+    // Start timer for this assistant
+    setInterval(() => {
+      const diff = Math.floor((new Date() - start) / 1000);
+      const tEl = document.getElementById(timerId);
+      if(tEl) tEl.textContent = formatHHMMSS(diff);
+    }, 1000);
+  });
+}
+// ---------- Column 1 ----------
+function buildStudentList(data){
+  const list=document.getElementById("studentList");
+  list.innerHTML="";
+  let available=0;
+  data.forEach(s=>{
+    if(s.status==="registered"){
+      available++;
+      const div=document.createElement("div");
+      div.className="p-2 border rounded mb-1 hover-bg d-flex align-items-center";
+      // build image element with onerror-driven fallbacks when photo is not set
+      const img=document.createElement('img');
+      img.className='rounded-circle me-2'; img.width=32; img.height=32; img.setAttribute('data-sid', s.id);
+      if(s.photo){
+        img.src = `/static/img/students/${s.photo}?v=${Date.now()}`;
+        img.onerror = ()=>{ img.src = '/static/img/default.png'; };
+      }else{
+        const candidates = [
+          `/static/img/students/${encodeURIComponent(s.name)}.png?v=${Date.now()}`,
+          `/static/img/students/${encodeURIComponent(s.name)}..png?v=${Date.now()}`
+        ];
+        let i=0;
+        img.onerror = ()=>{ i++; if(i<candidates.length) img.src=candidates[i]; else img.src='/static/img/default.png'; };
+        img.src = candidates[0];
+      }
+      const info=document.createElement('div'); info.className='flex-fill';
+      info.innerHTML = `<b>${s.name}</b><br><small class="text-muted">${s.subject} · ${s.level}</small>`;
+      div.appendChild(img);
+      div.appendChild(info);
+      div.onclick=async()=>{
+        if(confirm("Start session for "+s.name+"?")){
+          await fetch(`/api/students/start/${s.id}`,{method:'POST'});
+          fetchDashboardData();
+        }
+      };
+      list.appendChild(div);
+    }
+  });
+  document.getElementById("registeredCount").innerText=
+    `${available} students available`;
+}
+
+// ---------- Column 2 ----------
+function buildSeatGrid(activeSessions){
+  const grid=document.getElementById("seatGrid");
+  grid.innerHTML="";
+  document.getElementById("activeCount").innerText=
+    `(${activeSessions.length} active)`;
+  for(let i=0;i<SEAT_LIMIT;i++){
+    const seatLabel="Seat "+(i+1);
+    const col=document.createElement("div"); col.className="col";
+    const s=activeSessions[i];
+    if(s){
+      const start=new Date((s.start_time||"").replace(/\u202f|\u2009/g," "));
+      const limit=DURATION_LIMITS[s.subject]||1800;
+      const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
+        const card=document.createElement("div");
+        card.className="card text-center shadow-sm seat-card";
+        card.innerHTML=`
+          <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="56" height="56" alt="photo">
+          <h6 class="fw-semibold mb-0 small">${s.name}</h6>
+          <small class="text-muted small">${s.subject} – ${seatLabel}</small>
+          <div class="timer fw-bold" style="font-size:1.1em; margin-top:0.5rem;">--:--:--</div>
+          <small class="text-muted started small">
+            Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>`;
+      card.onclick=async()=>{
+        if(confirm("Stop session for "+s.name+"?")){
+          await fetch(`/api/students/stop/${s.id}`,{method:'POST'});
+          fetchDashboardData();
+        }
+      };
+      col.appendChild(card); grid.appendChild(col);
+      const tEl=card.querySelector(".timer");
+      setInterval(()=>{
+        const diff=Math.floor((new Date()-start)/1000);
+        tEl.textContent=formatHHMMSS(diff);
+        tEl.classList.toggle("text-danger",diff>limit);
+        tEl.classList.toggle("text-success",diff<=limit);
+      },1000);
+    }else{
+      col.innerHTML=`<div class="card p-3 text-center shadow-sm seat-empty">
+          <div class="fw-light text-muted" style="height:100px;
+             display:flex;align-items:center;justify-content:center;">
+            ${seatLabel} Empty
+          </div></div>`;
+      grid.appendChild(col);
+    }
+  }
+}
+
+// ---------- Column 3 ----------
+function buildCheckedList(data){
+  const checked=data.filter(s=>s.status==="checked");
+  const ul=document.getElementById("checkedList"); ul.innerHTML="";
+    checked.forEach(s=>{
+        const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
+      // prefer accumulated total_seconds (today) if available, otherwise fall back to last-session duration
+      const dur = formatSessionTime(s.total_seconds || s.duration || 0);
+    const li=document.createElement("li");
+    li.className="list-group-item";
+    li.innerHTML=`<div class="d-flex align-items-center">
+      <img src="${photo}" data-sid="${s.id}" class="rounded-circle me-2" width="32" height="32" alt="photo">
+      <div><div class="fw-semibold">${s.name}</div>
+      <div class="text-success small">${dur}</div></div></div>`;
+    ul.appendChild(li);
+  });
+  document.getElementById("checkedCount").innerText=
+    `${checked.length} students checked out today`;
+}
+
+// ---------- Search + Refresh ----------
+// wire refresh to rebuild and then explicitly update image sources
+const refreshBtn = document.getElementById("refreshList");
+if(refreshBtn){
+  refreshBtn.addEventListener('click', async (e)=>{
+    e.preventDefault();
+    console.debug('[dashboard] refresh button clicked');
+    // ask user for path to photos (remember last value in localStorage)
+    const last = localStorage.getItem('photosPath') || '';
+    const path = prompt('Enter path to photos folder (absolute or relative to project):', last);
+    if(path === null) return; // user cancelled
+    localStorage.setItem('photosPath', path);
+    try{
+      const res = await fetch('/api/photos/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path })
+      });
+      const j = await res.json().catch(()=>({}));
+      if(!res.ok){
+        console.warn('[dashboard] scan failed', j);
+        alert('Photo scan failed: '+(j.error || res.statusText || 'unknown'));
+      } else {
+        console.debug('[dashboard] scan result', j);
+      }
+    }catch(err){
+      console.error('[dashboard] scan error', err);
+      alert('Error scanning photos: '+err.message);
+    }
+    // always refresh the dashboard data after scan attempt
+    fetchDashboardData();
+  });
+} else {
+  console.warn('[dashboard] refreshList button not found');
+}
+document.getElementById("searchInput").addEventListener("input",e=>{
+  const term=e.target.value.toLowerCase();
+  document.querySelectorAll("#studentList > div").forEach(div=>{
+    div.style.display=div.innerText.toLowerCase().includes(term)?"":"none";
+  });
+});
+
+fetchDashboardData();
+</script>

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+
+<div class="container-fluid vh-100 d-flex flex-column bg-light p-3">
+  <div class="row flex-grow-1 g-3" style="height:100%;">
+
+    {% include "dashboard/_column1_students.html" %}
+    {% include "dashboard/_column2_active.html" %}
+    {% include "dashboard/_column3_checked.html" %}
+
+  </div>
+</div>
+
+{% include "dashboard/_scripts.html" %}
+{% endblock %}
