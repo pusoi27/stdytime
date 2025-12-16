@@ -1,0 +1,1182 @@
+# ================================================================
+#  KumoClock v2.2.9 - Main Flask Application (Refactored)
+# ================================================================
+"""
+KumoClock: Student class management system with dashboard, QR codes, and PDF label generation.
+Features: Student management, session tracking, photo support, QR generation, Avery 8160 PDF output, assistant duty tracking.
+"""
+
+from flask import Flask, render_template, request, send_from_directory, jsonify
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import sqlite3
+import os
+import shutil
+
+from modules.database import init_db, DB_PATH
+from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports
+from modules.utils import format_hhmm
+
+# ================================================================
+#  Flask setup
+# ================================================================
+app = Flask(__name__)
+app.secret_key = "kumoclock_secret_key"
+
+# Initialize / verify sqlite DB
+init_db()
+
+# Folders for CSV IO
+UPLOAD_FOLDER = "uploads"
+EXPORT_FOLDER = "exports"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(EXPORT_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
+
+# Student photo directories
+STUDENT_PHOTOS_STATIC = os.path.join('static', 'img', 'students')
+TEMPLATES_STUDENT_PHOTOS = os.path.join('templates', 'static', 'img', 'students')
+os.makedirs(STUDENT_PHOTOS_STATIC, exist_ok=True)
+os.makedirs(TEMPLATES_STUDENT_PHOTOS, exist_ok=True)
+
+
+@app.route('/api/photos/scan', methods=['POST'])
+def api_photos_scan():
+    """Scan a user-provided folder for image files and copy them into the
+    application's photo folders so the dashboard can serve them.
+
+    Expects JSON: { "path": "<absolute-or-relative-path>" }
+    Returns JSON with `copied` (files copied) and `available` (all image files seen).
+    """
+    data = request.get_json(silent=True) or {}
+    path = (data.get('path') or '').strip()
+    if not path:
+        return jsonify({'error': 'no path provided'}), 400
+    # allow relative paths (relative to project root)
+    if not os.path.isabs(path):
+        path = os.path.abspath(os.path.join(os.getcwd(), path))
+    if not os.path.isdir(path):
+        return jsonify({'error': 'path not found', 'path': path}), 400
+
+    allowed_ext = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
+    copied = []
+    available = []
+    try:
+        for fname in sorted(os.listdir(path)):
+            if os.path.splitext(fname)[1].lower() in allowed_ext:
+                available.append(fname)
+                src = os.path.join(path, fname)
+                dst = os.path.join(STUDENT_PHOTOS_STATIC, fname)
+                tdst = os.path.join(TEMPLATES_STUDENT_PHOTOS, fname)
+                try:
+                    # copy to served static folder if missing or newer
+                    if (not os.path.exists(dst)) or (os.path.getmtime(src) > os.path.getmtime(dst)):
+                        shutil.copy2(src, dst)
+                        copied.append(fname)
+                    # also copy to templates folder for compatibility
+                    if (not os.path.exists(tdst)) or (os.path.getmtime(src) > os.path.getmtime(tdst)):
+                        shutil.copy2(src, tdst)
+                except Exception:
+                    # ignore copy errors per-file
+                    continue
+    except Exception as e:
+        return jsonify({'error': 'scan failed', 'detail': str(e)}), 500
+
+    return jsonify({'copied': copied, 'available': available, 'path': path})
+
+
+# ================================================================
+#  Helper functions
+# ================================================================
+def get_active_students():
+    # Return (name, subject, level, photo) for currently active students
+    rows = student_manager.get_all_students()
+    active_list = []
+    for r in rows:
+        # r may be (id,name,subject,level,email,phone,photo,active) or (id,name,subject,level,email,phone,photo)
+        sid = r[0]
+        # determine active flag
+        active_flag = None
+        if len(r) >= 8:
+            active_flag = r[7]
+        else:
+            with sqlite3.connect(DB_PATH) as conn:
+                active_row = conn.execute("SELECT active FROM students WHERE id=?", (sid,)).fetchone()
+                active_flag = active_row[0] if active_row else 0
+        if active_flag == 1:
+            name, subj, lvl = r[1], r[2], r[3]
+            photo = r[6] if len(r) >= 7 else None
+            active_list.append((name, subj, lvl, photo))
+    return active_list
+
+
+@app.context_processor
+def inject_now():
+    """Inject current date/time into all templates."""
+    now = datetime.now()
+    return dict(
+        date_str=now.strftime("%A, %B %d, %Y"),
+        time_str=now.strftime("%I:%M:%S %p"),
+    )
+
+
+# ================================================================
+#  Dashboard
+# ================================================================
+@app.route("/")
+def dashboard():
+    return render_template(
+        "dashboard.html",
+        active_students=get_active_students(),
+        assistants=[
+            ("Sarah Chen", "2 h 15 m"),
+            ("Mike Johnson", "1 h 42 m"),
+            ("Emma Davis", "3 h 08 m"),
+        ],
+        checked_out=[
+            ("Bob Smith", "2 h 45 m"),
+            ("Julia White", "1 h 30 m"),
+            ("Kevin Taylor", "3 h 15 m"),
+        ],
+    )
+
+
+# ================================================================
+#  Students CRUD + CSV
+# ================================================================
+@app.route("/students")
+def students_list():
+    return render_template(
+        "students.html",
+        students=student_manager.get_all_students(),
+    )
+
+
+@app.route("/students/add", methods=["GET", "POST"])
+def students_add():
+    if request.method == "POST":
+        file = request.files.get("photo")
+        filename = None
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            # save copies in both served static folder and templates folder
+            file.save(os.path.join(STUDENT_PHOTOS_STATIC, filename))
+            try:
+                file.stream.seek(0)
+                file.save(os.path.join(TEMPLATES_STUDENT_PHOTOS, filename))
+            except Exception:
+                # if second save fails, continue — primary static save is most important
+                pass
+        student_manager.add_student(
+            request.form["name"],
+            request.form.get("subject", ""),
+            request.form.get("level", ""),
+            request.form.get("email", ""),
+            request.form.get("phone", ""),
+            filename,
+        )
+        flash("Student added successfully.", "success")
+        return redirect(url_for("students_list"))
+    return render_template("student_form.html", action="Add", student=None)
+
+
+@app.route("/students/edit/<int:sid>", methods=["GET", "POST"])
+def students_edit(sid):
+    stu = student_manager.get_student(sid)
+    if not stu:
+        return "Student not found", 404
+    if request.method == "POST":
+        # accept optional photo replacement on edit
+        file = request.files.get("photo")
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(STUDENT_PHOTOS_STATIC, filename))
+            try:
+                file.stream.seek(0)
+                file.save(os.path.join(TEMPLATES_STUDENT_PHOTOS, filename))
+            except Exception:
+                pass
+            # update student photo column
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("UPDATE students SET photo=? WHERE id=?", (filename, sid))
+                conn.commit()
+        student_manager.update_student(
+            sid,
+            request.form["name"],
+            request.form.get("subject", ""),
+            request.form.get("level", ""),
+            request.form.get("email", ""),
+            request.form.get("phone", ""),
+        )
+        flash("Student updated.", "info")
+        return redirect(url_for("students_list"))
+    return render_template("student_form.html", action="Edit", student=stu)
+
+
+@app.route("/students/delete/<int:sid>")
+def students_delete(sid):
+    student_manager.delete_student(sid)
+    flash("Student deleted.", "warning")
+    return redirect(url_for("students_list"))
+
+
+@app.route("/students/import", methods=["POST"])
+def students_import():
+    file = request.files.get("csvfile")
+    if not file or file.filename == "":
+        flash("No file selected.", "danger")
+        return redirect(url_for("students_list"))
+    path = os.path.join(app.config["UPLOAD_FOLDER"], secure_filename(file.filename))
+    file.save(path)
+    added = student_manager.import_csv(path)
+    flash(f"Imported {added} new student(s).", "success")
+    return redirect(url_for("students_list"))
+
+
+@app.route("/students/export")
+def students_export():
+    export_path = os.path.join(EXPORT_FOLDER, "students_export.csv")
+    student_manager.export_csv(export_path)
+    return send_file(export_path, as_attachment=True)
+
+
+# ================================================================
+#  Assistant Management Routes
+# ================================================================
+@app.route("/assistants")
+def assistants_list():
+    return render_template(
+        "assistants.html",
+        assistants=assistant_manager.get_all_assistants(),
+    )
+
+
+@app.route("/assistants/add", methods=["GET", "POST"])
+def assistants_add():
+    if request.method == "POST":
+        assistant_manager.add_assistant(
+            request.form["name"],
+            request.form.get("role", ""),
+            request.form.get("email", ""),
+            request.form.get("phone", ""),
+        )
+        flash("Assistant added successfully.", "success")
+        return redirect(url_for("assistants_list"))
+    return render_template("assistant_form.html", action="Add", assistant=None)
+
+
+@app.route("/assistants/edit/<int:aid>", methods=["GET", "POST"])
+def assistants_edit(aid):
+    asst = assistant_manager.get_assistant(aid)
+    if not asst:
+        return "Assistant not found", 404
+    if request.method == "POST":
+        assistant_manager.update_assistant(
+            aid,
+            request.form["name"],
+            request.form.get("role", ""),
+            request.form.get("email", ""),
+            request.form.get("phone", ""),
+        )
+        flash("Assistant updated.", "info")
+        return redirect(url_for("assistants_list"))
+    return render_template("assistant_form.html", action="Edit", assistant=asst)
+
+
+@app.route("/assistants/delete/<int:aid>")
+def assistants_delete(aid):
+    assistant_manager.delete_assistant(aid)
+    flash("Assistant deleted.", "warning")
+    return redirect(url_for("assistants_list"))
+
+
+# ================================================================
+#  New Live Dashboard API Routes (AJAX)
+# ================================================================
+active_students_cache = []
+checked_out_cache = []
+selected_assistants_cache = []
+
+
+@app.route("/api/students/list")
+def api_students_list():
+    """Return all students with status information for AJAX refresh."""
+    data = []
+    for r in student_manager.get_all_students():
+        # normalize tuple shapes
+        if len(r) >= 8:
+            sid, name, subj, lvl, email, phone, photo, active = r
+        elif len(r) == 7:
+            sid, name, subj, lvl, email, phone, photo = r
+            # need to query DB for active flag
+            active_row = sqlite3.connect(DB_PATH).execute("SELECT active FROM students WHERE id=?", (sid,)).fetchone()
+            active = active_row[0] if active_row else 0
+        else:
+            # unexpected shape, skip
+            continue
+        if active != 1:
+            continue
+        status = "registered"
+        if any(a.get("id") == sid for a in active_students_cache):
+            status = "active"
+        if any(ch.get("id") == sid for ch in checked_out_cache):
+            status = "checked"
+        # compute total time (seconds) for this student for today
+        with sqlite3.connect(DB_PATH) as conn2:
+            cur2 = conn2.cursor()
+            cur2.execute(
+                "SELECT COALESCE(SUM(duration),0) FROM sessions WHERE student_id=? AND DATE(start_time)=DATE('now')",
+                (sid,)
+            )
+            total_secs_row = cur2.fetchone()
+            total_secs = int(total_secs_row[0]) if total_secs_row and total_secs_row[0] is not None else 0
+
+        data.append(dict(id=sid, name=name, subject=subj,
+                         level=lvl, photo=photo, status=status, total_seconds=total_secs))
+    return jsonify(data)
+
+
+@app.route("/api/students/start/<int:sid>", methods=["POST"])
+def api_student_start(sid):
+    """Start a study session for this student (move to active)."""
+    if any(a["id"] == sid for a in active_students_cache):
+        return jsonify({"error": "Already active"}), 400
+
+    timer_manager.start_session(sid)
+
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute(
+            "SELECT id,name,subject,level,photo FROM students WHERE id=?", (sid,)
+        ).fetchone()
+    if not row:
+        return jsonify({"error": "Student not found"}), 404
+
+    # row may include photo at index 4
+    photo = row[4] if len(row) > 4 else None
+    active_students_cache.append(
+        dict(id=row[0], name=row[1], subject=row[2], level=row[3], photo=photo)
+    )
+    return jsonify({"success": True})
+
+
+@app.route("/api/students/stop/<int:sid>", methods=["POST"])
+def api_student_stop(sid):
+    """Stop a study session for this student (move to checked out)."""
+    result = timer_manager.stop_session(sid)
+    if not result:
+        return jsonify({"error": "No active session found"}), 400
+
+    global active_students_cache, checked_out_cache
+    active_students_cache = [s for s in active_students_cache if s["id"] != sid]
+
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute(
+            "SELECT id,name,subject,level,photo FROM students WHERE id=?", (sid,)
+        ).fetchone()
+    if not row:
+        return jsonify({"error": "Student not found"}), 404
+
+    photo = row[4] if len(row) > 4 else None
+    checked_out_cache.append(
+        dict(
+            id=row[0],
+            name=row[1],
+            subject=row[2],
+            level=row[3],
+            photo=photo,
+            duration=result["duration"],
+        )
+    )
+    return jsonify({"success": True})
+
+@app.route("/api/sessions/active")
+def api_sessions_active():
+    """Return active sessions with start_time for live timers."""
+    result = []
+    for s in active_students_cache:
+        sid = s["id"]
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT start_time FROM sessions WHERE student_id=? ORDER BY id DESC LIMIT 1",
+                (sid,),
+            )
+            row = cur.fetchone()
+            start_time = row[0] if row else None
+        result.append({
+            "id": sid,
+            "name": s.get("name"),
+            "subject": s.get("subject"),
+            "level": s.get("level"),
+            "photo": s.get("photo"),
+            "start_time": start_time
+        })
+    return jsonify(result)
+
+
+@app.route("/api/assistants/list")
+def api_assistants_list():
+    """Return all available assistants with duty status and start time for payroll."""
+    assistants = assistant_manager.get_all_assistants()
+    result = []
+    for a in assistants:
+        duty_info = next((x for x in selected_assistants_cache if x["id"] == a[0]), None)
+        result.append(
+            dict(
+                id=a[0],
+                name=a[1],
+                role=a[2] if len(a) > 2 else "",
+                email=a[3] if len(a) > 3 else "",
+                phone=a[4] if len(a) > 4 else "",
+                on_duty=duty_info is not None,
+                start_time=duty_info["start_time"] if duty_info else None,
+            )
+        )
+    return jsonify(result)
+
+
+@app.route("/api/assistants/select/<int:aid>", methods=["POST"])
+def api_assistants_select(aid):
+    """Toggle assistant on/off duty with payroll time tracking."""
+    global selected_assistants_cache
+    from datetime import datetime
+    
+    assistant = assistant_manager.get_assistant(aid)
+    if not assistant:
+        return jsonify({"error": "Assistant not found"}), 404
+    
+    # Check if already on duty
+    duty_info = next((a for a in selected_assistants_cache if a["id"] == aid), None)
+    
+    if duty_info:
+        # End duty: calculate duration and persist to DB
+        start = datetime.fromisoformat(duty_info.get("start_time")) if duty_info.get("start_time") else None
+        end = datetime.now()
+        duration = int((end - start).total_seconds()) if start else 0
+        # persist to assistant_sessions table
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO assistant_sessions (assistant_id, start_time, end_time, duration) VALUES (?,?,?,?)",
+                (aid, start.isoformat() if start else None, end.isoformat(), duration),
+            )
+            conn.commit()
+        # remove from cache
+        selected_assistants_cache = [a for a in selected_assistants_cache if a["id"] != aid]
+        return jsonify({"success": True, "on_duty": False, "duration": duration})
+    else:
+        # Start duty: add to cache with start time
+        selected_assistants_cache.append(
+            dict(
+                id=assistant[0],
+                name=assistant[1],
+                role=assistant[2] if len(assistant) > 2 else "",
+                start_time=datetime.now().isoformat(),
+            )
+        )
+        return jsonify({"success": True, "on_duty": True})
+
+
+# Serve student photos from templates folder as a fallback path
+@app.route('/templates_static/img/students/<path:filename>')
+def serve_templates_student_photo(filename):
+    return send_from_directory(TEMPLATES_STUDENT_PHOTOS, filename)
+
+
+# ================================================================
+# Reports - assistant hours
+@app.route('/reports/assistants')
+def reports_assistants():
+    days = int(request.args.get('days', 30))
+    data = reports.get_assistant_hours_summary(days=days)
+    return render_template('reports_assistants.html', data=data, days=days)
+
+
+@app.route('/reports/assistants/pdf')
+def reports_assistants_pdf():
+    days = int(request.args.get('days', 30))
+    path = reports.generate_assistant_hours_report(days=days)
+    return send_file(path, as_attachment=True)
+
+
+@app.route('/reports/assistants/csv')
+def reports_assistants_csv():
+    # expects start and end as YYYY-MM-DD query params
+    start = request.args.get('start')
+    end = request.args.get('end')
+    if not start or not end:
+        return redirect(url_for('reports_assistants'))
+    # Get detailed sessions
+    sessions = reports.get_assistant_sessions_between(start, end)
+    # Get summary by assistant
+    summary = reports.get_assistant_hours_between(start, end)
+    
+    # Helper: round up to nearest 0.1
+    def round_up_to_0_1(value):
+        import math
+        return math.ceil(value * 10) / 10.0
+    
+    # build CSV in-memory
+    si = io.StringIO()
+    writer = csv.writer(si)
+    
+    # Header and per-session rows
+    writer.writerow(['ASSISTANT DUTY LOG', start, 'to', end])
+    writer.writerow([])  # blank line
+    writer.writerow(['Name', 'Date', 'Start Time', 'End Time', 'Duration (seconds)'])
+    for name, date_only, start_iso, end_iso, duration_sec in sessions:
+        # Extract time portion from ISO strings
+        start_time = start_iso.split('T')[1][:5] if 'T' in start_iso else start_iso
+        end_time = end_iso.split('T')[1][:5] if 'T' in end_iso else end_iso
+        writer.writerow([name, date_only, start_time, end_time, duration_sec])
+    
+    # Blank line and summary section
+    writer.writerow([])
+    writer.writerow(['SUMMARY BY ASSISTANT'])
+    writer.writerow(['Name', 'Total Hours (rounded up)'])
+    for name, sessions_count, total_sec in summary:
+        hours = total_sec / 3600.0
+        hours_rounded = round_up_to_0_1(hours)
+        writer.writerow([name, f'{hours_rounded:.1f}'])
+    
+    output = si.getvalue().encode('utf-8-sig')
+    filename = f"assistant_hours_{start}_to_{end}.csv"
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"'
+    }
+    return Response(output, mimetype='text/csv', headers=headers)
+
+# ================================================================
+#  QR Code Generation
+# ================================================================
+@app.route("/qr/generate")
+def qr_generate():
+    """Generate QR code for a specific student."""
+    students = student_manager.get_all_students()
+    return render_template("qr_generate.html", students=students)
+
+
+@app.route("/qr/generate/<int:sid>", methods=["POST", "GET"])
+def qr_generate_student(sid):
+    """Generate and return QR code PNG for a student."""
+    student = student_manager.get_student(sid)
+    if not student:
+        return "Student not found", 404
+    # QR data: student name and ID
+    qr_data = f"ID:{student[0]}\nName:{student[1]}"
+    path = qr_generator.generate_qr(qr_data, f"student_{student[0]}")
+    return send_file(path, mimetype='image/png')
+
+
+@app.route("/qr/generate_all", methods=["POST"])
+def qr_generate_all():
+    """Generate QR codes for all students where a code does not already exist.
+    Returns JSON with counts and lists of generated/skipped files.
+    """
+    students = student_manager.get_all_students()
+    generated = []
+    skipped = []
+    errors = []
+    out_dir = os.path.join('assets', 'qr_codes')
+    os.makedirs(out_dir, exist_ok=True)
+    for s in students:
+        try:
+            sid = s[0]
+            name = f"student_{sid}"
+            dest = os.path.join(out_dir, f"{name}.png")
+            if os.path.exists(dest):
+                skipped.append(name + '.png')
+                continue
+            qr_data = f"ID:{sid}\nName:{s[1]}"
+            path = qr_generator.generate_qr(qr_data, name)
+            generated.append(os.path.basename(path))
+        except Exception as e:
+            errors.append({'id': sid, 'error': str(e)})
+
+    return jsonify({'generated': generated, 'skipped': skipped, 'errors': errors, 'generated_count': len(generated), 'skipped_count': len(skipped)})
+
+
+@app.route('/assets/qr_codes/<path:filename>')
+def serve_qr_code(filename):
+    """Serve generated QR code images from the assets/qr_codes folder."""
+    qr_dir = os.path.join(os.getcwd(), 'assets', 'qr_codes')
+    return send_from_directory(qr_dir, filename)
+
+
+# ================================================================
+# Assistant QR generation & printing
+# ================================================================
+@app.route("/qr/assistants/generate_all", methods=["POST"])
+def qr_assistants_generate_all():
+    """Generate QR codes for all assistants where missing."""
+    assistants = assistant_manager.get_all_assistants()
+    generated, skipped, errors = [], [], []
+    out_dir = os.path.join('assets', 'qr_codes')
+    os.makedirs(out_dir, exist_ok=True)
+    for a in assistants:
+        aid = a[0]
+        name = a[1]
+        qr_name = f"assistant_{aid}"
+        dest = os.path.join(out_dir, f"{qr_name}.png")
+        if os.path.exists(dest):
+            skipped.append(qr_name + '.png')
+            continue
+        try:
+            qr_data = f"ASST:{aid}\nName:{name}"
+            path = qr_generator.generate_qr(qr_data, qr_name)
+            generated.append(os.path.basename(path))
+        except Exception as e:
+            errors.append({'id': aid, 'error': str(e)})
+    return jsonify({'generated': generated, 'skipped': skipped, 'errors': errors})
+
+
+@app.route("/qr/books/generate_all", methods=["POST"])
+def qr_books_generate_all():
+    """Generate QR codes for all books where missing."""
+    generated, skipped, errors = [], [], []
+    out_dir = os.path.join('assets', 'qr_codes')
+    os.makedirs(out_dir, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, title FROM books ORDER BY title")
+        for (bid, title) in c.fetchall():
+            try:
+                qr_name = f"book_{bid}"
+                dest = os.path.join(out_dir, f"{qr_name}.png")
+                if os.path.exists(dest):
+                    skipped.append(qr_name + '.png')
+                    continue
+                qr_data = f"BOOK:{bid}\nTitle:{title or ''}"
+                path = qr_generator.generate_qr(qr_data, qr_name)
+                generated.append(os.path.basename(path))
+            except Exception as e:
+                errors.append({'id': bid, 'error': str(e)})
+    return jsonify({'generated': generated, 'skipped': skipped, 'errors': errors})
+
+
+@app.route("/qr/assistants/generate/<int:aid>", methods=["POST"])
+def qr_assistant_generate(aid):
+    assistant = assistant_manager.get_assistant(aid)
+    if not assistant:
+        return "Assistant not found", 404
+    out_dir = os.path.join('assets', 'qr_codes')
+    os.makedirs(out_dir, exist_ok=True)
+    qr_name = f"assistant_{aid}"
+    dest = os.path.join(out_dir, f"{qr_name}.png")
+    if os.path.exists(dest):
+        return jsonify({'message': 'exists', 'file': os.path.basename(dest)})
+    qr_data = f"ASST:{aid}\nName:{assistant[1]}"
+    path = qr_generator.generate_qr(qr_data, qr_name)
+    return jsonify({'message': 'generated', 'file': os.path.basename(path)})
+
+
+@app.route('/qr/assistants/pdf')
+def qr_assistants_pdf():
+    """Generate Avery 8163 PDF for assistants with existing QR codes."""
+    assistants = assistant_manager.get_all_assistants()
+    labels = []
+    qr_dir = os.path.join('assets', 'qr_codes')
+    for a in assistants:
+        aid = a[0]
+        qr_path = os.path.join(qr_dir, f"assistant_{aid}.png")
+        if os.path.exists(qr_path):
+            labels.append({'name': a[1], 'qr_path': qr_path})
+    if not labels:
+        return "No assistant QR codes found. Generate them first.", 400
+    pdf_buffer = _build_avery8163_pdf(labels)
+    return send_file(pdf_buffer, as_attachment=True, download_name="assistant_qr_avery8163.pdf", mimetype='application/pdf')
+
+
+def _build_avery_pdf(labels):
+    """Build a PDF binary for given labels list. Each label is dict with keys: name, qr_path (may be None).
+    Returns BytesIO object positioned at start.
+    Avery 8160: 10 columns x 3 rows = 30 labels per page, each 1" x 2.625" (2-5/8").
+    """
+    buffer = io.BytesIO()
+    # Use portrait letter for Avery 8160 printing (8.5in x 11in)
+    page_width, page_height = letter  # portrait
+    c = canvas.Canvas(buffer, pagesize=(page_width, page_height))
+
+    # Avery 8160 specifics: 3 columns x 10 rows = 30 labels per page
+    cols = 3
+    rows = 10
+    # Each label is 2-5/8" wide and 1" high
+    label_w = 2.625 * inch
+    label_h = 1.0 * inch
+    # reasonable margins to match Avery layout (approx.)
+    left_margin = 0.219 * inch
+    top_margin = 0.5 * inch
+    # QR size should fit comfortably inside the 1" height
+    qr_size = 0.8 * inch
+
+    labels_per_page = cols * rows
+    total = len(labels)
+    pages = (total + labels_per_page - 1) // labels_per_page or 1
+
+    idx = 0
+    for p in range(pages):
+        for r in range(rows):
+            for c_idx in range(cols):
+                x = left_margin + c_idx * label_w
+                # compute y from bottom
+                y = page_height - top_margin - (r + 1) * label_h
+                if idx < total:
+                    lab = labels[idx]
+                    # draw border for visual alignment (optional)
+                    c.rect(x, y, label_w, label_h, stroke=0, fill=0)
+                    # draw QR on the left and name horizontally to the right
+                    # compute positions
+                    padding = 0.06 * inch
+                    qr_x = x + padding
+                    qr_y = y + (label_h - qr_size) / 2
+                    name_x = qr_x + qr_size + (0.08 * inch)
+                    name_width = label_w - (qr_size + padding + 0.08 * inch + padding)
+
+                    # draw QR if available
+                    if lab.get('qr_path') and os.path.exists(lab['qr_path']):
+                        try:
+                            c.drawImage(lab['qr_path'], qr_x, qr_y, width=qr_size, height=qr_size, preserveAspectRatio=True, mask='auto')
+                        except Exception:
+                            pass
+
+                    # draw name to the right of the QR, vertically centered
+                    name = (lab.get('name') or '')
+                    font_size = 11
+                    c.setFont('Helvetica-Bold', font_size)
+                    # reduce font size if it doesn't fit in available width
+                    while c.stringWidth(name, 'Helvetica-Bold', font_size) > name_width and font_size > 5:
+                        font_size -= 1
+                        c.setFont('Helvetica-Bold', font_size)
+                    text_y = y + (label_h - font_size) / 2 - 1
+                    # truncate with ellipsis if too long
+                    max_chars = int((name_width / c.stringWidth('W', 'Helvetica-Bold', font_size)) * 1)
+                    if max_chars > 3 and len(name) > max_chars:
+                        name = name[:max_chars-3] + '...'
+                    c.drawString(name_x, text_y, name)
+                else:
+                    # empty label - draw nothing (keeps spacing)
+                    pass
+                idx += 1
+        c.showPage()
+
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+
+def _build_avery8163_pdf(labels):
+    """Build PDF for Avery 8163 (2" x 4" labels, 2 columns x 5 rows per sheet)."""
+    buffer = io.BytesIO()
+    page_width, page_height = letter  # portrait
+    c = canvas.Canvas(buffer, pagesize=(page_width, page_height))
+
+    cols = 2
+    rows = 5
+    label_w = 4.0 * inch
+    label_h = 2.0 * inch
+    left_margin = 0.5 * inch
+    top_margin = 0.5 * inch
+    qr_size = 1.4 * inch
+
+    labels_per_page = cols * rows
+    total = len(labels)
+    pages = (total + labels_per_page - 1) // labels_per_page or 1
+
+    idx = 0
+    for _ in range(pages):
+        for r in range(rows):
+            for col in range(cols):
+                if idx >= total:
+                    break
+                label = labels[idx]
+                x = left_margin + col * label_w
+                y = page_height - top_margin - (r + 1) * label_h
+
+                # draw border light
+                c.setStrokeColorRGB(0.85, 0.85, 0.85)
+                c.rect(x, y, label_w, label_h, stroke=1, fill=0)
+
+                # QR on left
+                if label.get("qr_path") and os.path.exists(label.get("qr_path")):
+                    c.drawImage(label.get("qr_path"), x + 0.2 * inch, y + (label_h - qr_size) / 2, qr_size, qr_size, preserveAspectRatio=True)
+
+                # Name on right
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(x + qr_size + 0.4 * inch, y + label_h / 2 + 4, label.get("name", ""))
+                idx += 1
+        c.showPage()
+
+    c.save()
+    buffer.seek(0)
+    return buffer
+
+
+@app.route('/qr/pdf/individual/<int:sid>')
+def qr_pdf_individual(sid):
+    # build labels: one student then 29 empty
+    student = student_manager.get_student(sid)
+    if not student:
+        return "Student not found", 404
+    qr_path = os.path.join(os.getcwd(), 'assets', 'qr_codes', f'student_{sid}.png')
+    labels = [{'name': student[1], 'qr_path': qr_path}]
+    # pad to at least 1 (build function handles pages)
+    buf = _build_avery_pdf(labels)
+    filename = f'student_{sid}_labels.pdf'
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
+@app.route('/qr/pdf/all')
+def qr_pdf_all():
+    students = student_manager.get_all_students()
+    labels = []
+    for s in students:
+        sid = s[0]
+        qr_path = os.path.join(os.getcwd(), 'assets', 'qr_codes', f'student_{sid}.png')
+        labels.append({'name': s[1], 'qr_path': qr_path if os.path.exists(qr_path) else None})
+    buf = _build_avery_pdf(labels)
+    filename = 'students_qr_labels.pdf'
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
+@app.route("/qr/print/individual")
+def qr_print_individual():
+    """Page to select a student and print their QR code."""
+    students = student_manager.get_all_students()
+    return render_template("qr_print_individual.html", students=students)
+
+
+@app.route("/qr/print/all")
+def qr_print_all():
+    """Generate and display QR codes for all students."""
+    students = student_manager.get_all_students()
+    # filter to active students
+    active_students = [s for s in students if len(s) >= 8 and s[7] == 1]
+    return render_template("qr_print_all.html", students=active_students)
+
+@app.route("/qr/generate_page")
+def qr_generate_page():
+    """Display unified QR generation page for students, assistants, and books."""
+    students = student_manager.get_all_students()
+    assistants = assistant_manager.get_all_assistants()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, title FROM books ORDER BY title")
+        books = c.fetchall()
+    return render_template("qr_generate_all.html", students=students, assistants=assistants, books=books)
+
+
+@app.route("/qr/print_page")
+def qr_print_page():
+    """Display unified QR print page for students, assistants, and books."""
+    students = student_manager.get_all_students()
+    assistants = assistant_manager.get_all_assistants()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, title FROM books ORDER BY title")
+        books = c.fetchall()
+    return render_template("qr_print_all.html", students=students, assistants=assistants, books=books)
+
+
+@app.route("/qr/books/generate/<int:bid>", methods=["POST"])
+def qr_book_generate(bid):
+    """Generate QR for a single book."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute("SELECT id, title FROM books WHERE id=?", (bid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Book not found"}), 404
+    out_dir = os.path.join('assets', 'qr_codes')
+    os.makedirs(out_dir, exist_ok=True)
+    qr_name = f"book_{bid}"
+    dest = os.path.join(out_dir, f"{qr_name}.png")
+    if os.path.exists(dest):
+        return jsonify({'message': 'exists', 'file': os.path.basename(dest)})
+    qr_data = f"BOOK:{bid}\nTitle:{row[1] or ''}"
+    path = qr_generator.generate_qr(qr_data, qr_name)
+    return jsonify({'message': 'generated', 'file': os.path.basename(path)})
+
+
+@app.route('/qr/assistants/pdf/individual/<int:aid>')
+def qr_assistant_pdf_individual(aid):
+    """Generate Avery 8163 PDF for a single assistant."""
+    assistant = assistant_manager.get_assistant(aid)
+    if not assistant:
+        return "Assistant not found", 404
+    qr_path = os.path.join('assets', 'qr_codes', f"assistant_{aid}.png")
+    if not os.path.exists(qr_path):
+        return "QR code not found. Generate it first.", 400
+    labels = [{'name': assistant[1], 'qr_path': qr_path}]
+    pdf_buffer = _build_avery8163_pdf(labels)
+    return send_file(pdf_buffer, as_attachment=True, download_name=f"assistant_{aid}_qr.pdf", mimetype='application/pdf')
+
+
+@app.route('/qr/books/pdf/individual/<int:bid>')
+def qr_book_pdf_individual(bid):
+    """Generate PDF for a single book QR."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute("SELECT id, title FROM books WHERE id=?", (bid,)).fetchone()
+    if not row:
+        return "Book not found", 404
+    qr_path = os.path.join('assets', 'qr_codes', f"book_{bid}.png")
+    if not os.path.exists(qr_path):
+        return "QR code not found. Generate it first.", 400
+    labels = [{'name': row[1], 'qr_path': qr_path}]
+    pdf_buffer = _build_avery8163_pdf(labels)
+    return send_file(pdf_buffer, as_attachment=True, download_name=f"book_{bid}_qr.pdf", mimetype='application/pdf')
+
+
+@app.route('/qr/books/pdf')
+def qr_books_pdf():
+    """Generate PDF for all books with existing QR codes."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT id, title FROM books ORDER BY title")
+        books = c.fetchall()
+    labels = []
+    qr_dir = os.path.join('assets', 'qr_codes')
+    for b in books:
+        bid = b[0]
+        qr_path = os.path.join(qr_dir, f"book_{bid}.png")
+        if os.path.exists(qr_path):
+            labels.append({'name': b[1], 'qr_path': qr_path})
+    if not labels:
+        return "No book QR codes found. Generate them first.", 400
+    pdf_buffer = _build_avery8163_pdf(labels)
+    return send_file(pdf_buffer, as_attachment=True, download_name="books_qr_avery8163.pdf", mimetype='application/pdf')
+
+@app.context_processor
+def inject_dynamic_lists():
+    """Make the in-memory active and checked lists available to templates."""
+    return dict(active_list=active_students_cache, checked_list=checked_out_cache)
+
+
+# ================================================================
+#  Attendance Reports
+# ================================================================
+@app.route('/reports/class-attendance/pdf')
+def class_attendance_pdf():
+    """Generate PDF: Date, # Active Students, Active Student List (comma-separated) for a date range (max last 30 days)."""
+    from datetime import datetime, timedelta, date as date_cls
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    import io
+
+    start_param = request.args.get('start')
+    end_param = request.args.get('end')
+    if not start_param or not end_param:
+        return "start and end parameters are required (YYYY-MM-DD)", 400
+
+    # Validate range: within last 30 days and start <= end
+    try:
+        start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+    except ValueError:
+        return "Invalid date format; expected YYYY-MM-DD", 400
+
+    if end_date < start_date:
+        return "end must be on or after start", 400
+
+    today = datetime.today().date()
+    earliest = today - timedelta(days=30)
+    if start_date < earliest or end_date > today or (end_date - start_date).days > 30:
+        return "Range must be within the last 30 calendar days", 400
+
+    # Build per-day distinct active student list
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        query = """
+            SELECT DATE(sess.start_time) as day, s.name
+            FROM sessions AS sess
+            JOIN students AS s ON s.id = sess.student_id
+            WHERE s.active = 1
+              AND DATE(sess.start_time) >= ? AND DATE(sess.start_time) <= ?
+            ORDER BY day, s.name
+        """
+        c.execute(query, (start_date.isoformat(), end_date.isoformat()))
+        rows = c.fetchall()
+
+    by_day = {}
+    for day, name in rows:
+        by_day.setdefault(day, set()).add(name)
+
+    # Generate PDF
+    buffer = io.BytesIO()
+    canv = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Title
+    canv.setFont("Helvetica-Bold", 16)
+    canv.drawString(inch, height - inch, "Class Attendance Report")
+    canv.setFont("Helvetica", 12)
+    canv.drawString(inch, height - inch - 0.3*inch, f"Date Range: {start_date} to {end_date}")
+
+    # Headers: Session Date | Number of Active Students | Active Student List
+    y = height - inch - 0.7*inch
+    canv.setFont("Helvetica-Bold", 11)
+    canv.drawString(inch, y, "Session Date")
+    canv.drawString(inch + 2.2*inch, y, "# Active Students")
+    canv.drawString(inch + 4.2*inch, y, "Active Student List")
+
+    # Rows
+    y -= 0.3*inch
+    canv.setFont("Helvetica", 10)
+    for day in sorted(by_day.keys()):
+        names = sorted(list(by_day[day]))
+        count = len(names)
+        names_str = ", ".join(names)
+
+        # Wrap names_str to fit width
+        max_width = width - (inch + 4.2*inch) - inch
+        # Simple wrapping at ~90 chars as fallback
+        def wrap_text(txt, limit=90):
+            if len(txt) <= limit:
+                return [txt]
+            parts, line = [], []
+            for w in txt.split(', '):
+                candidate = (', '.join(line+[w])) if line else w
+                if len(candidate) > limit:
+                    parts.append(', '.join(line))
+                    line = [w]
+                else:
+                    line.append(w)
+            if line:
+                parts.append(', '.join(line))
+            return parts
+
+        lines = wrap_text(names_str, 90)
+
+        # First line with date and count
+        canv.drawString(inch, y, str(day))
+        canv.drawString(inch + 2.2*inch, y, str(count))
+        canv.drawString(inch + 4.2*inch, y, lines[0] if lines else '')
+        y -= 0.25*inch
+
+        # Remaining wrapped lines
+        for extra in lines[1:]:
+            canv.drawString(inch + 4.2*inch, y, extra)
+            y -= 0.22*inch
+            if y < inch:
+                canv.showPage()
+                canv.setFont("Helvetica", 10)
+                y = height - inch
+
+        if y < inch:
+            canv.showPage()
+            canv.setFont("Helvetica", 10)
+            y = height - inch
+
+    canv.save()
+    buffer.seek(0)
+    filename = f"class_attendance_{start_date}_to_{end_date}.pdf"
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
+@app.route('/reports/student-attendance/pdf')
+def student_attendance_pdf():
+    """Generate PDF for a student's sessions in range (max last 30 days): Session Date | Session Active Time."""
+    from datetime import datetime, timedelta
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
+    from reportlab.pdfgen import canvas
+    import io
+    
+    sid = request.args.get('sid', type=int)
+    start_param = request.args.get('start')
+    end_param = request.args.get('end')
+    if not sid or not start_param or not end_param:
+        return "sid, start and end parameters are required", 400
+
+    try:
+        start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+    except ValueError:
+        return "Invalid date format; expected YYYY-MM-DD", 400
+
+    if end_date < start_date:
+        return "end must be on or after start", 400
+
+    today = datetime.today().date()
+    earliest = today - timedelta(days=30)
+    if start_date < earliest or end_date > today or (end_date - start_date).days > 30:
+        return "Range must be within the last 30 calendar days", 400
+
+    # Fetch student name and sessions within range
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        srow = c.execute("SELECT name FROM students WHERE id=?", (sid,)).fetchone()
+        if not srow:
+            return "Student not found", 404
+        student_name = srow[0]
+
+        q = """
+            SELECT DATE(start_time) as day, duration
+            FROM sessions
+            WHERE student_id = ?
+              AND DATE(start_time) >= ? AND DATE(start_time) <= ?
+            ORDER BY start_time ASC
+        """
+        c.execute(q, (sid, start_date.isoformat(), end_date.isoformat()))
+        sessions = c.fetchall()
+
+    # Generate PDF
+    buffer = io.BytesIO()
+    canv = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    canv.setFont("Helvetica-Bold", 16)
+    canv.drawString(inch, height - inch, "Student Attendance Report")
+    canv.setFont("Helvetica", 12)
+    canv.drawString(inch, height - inch - 0.3*inch, f"Student: {student_name} (ID {sid})")
+    canv.drawString(inch, height - inch - 0.55*inch, f"Date Range: {start_date} to {end_date}")
+
+    # Headers
+    y = height - inch - 0.9*inch
+    canv.setFont("Helvetica-Bold", 11)
+    canv.drawString(inch, y, "Session Date")
+    canv.drawString(inch + 3.0*inch, y, "Session Active Time")
+
+    # Rows
+    y -= 0.3*inch
+    canv.setFont("Helvetica", 10)
+    def fmt(sec):
+        sec = sec or 0
+        h = sec // 3600
+        m = (sec % 3600) // 60
+        return f"{int(h):02d}:{int(m):02d}"
+
+    for day, duration in sessions:
+        canv.drawString(inch, y, str(day))
+        canv.drawString(inch + 3.0*inch, y, fmt(duration))
+        y -= 0.25*inch
+        if y < inch:
+            canv.showPage()
+            canv.setFont("Helvetica", 10)
+            y = height - inch
+
+    # If no sessions, state that
+    if not sessions:
+        canv.drawString(inch, y, "No sessions found in the selected range.")
+
+    canv.save()
+    buffer.seek(0)
+    filename = f"student_{sid}_attendance_{start_date}_to_{end_date}.pdf"
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+
+# ================================================================
+#  Error Handling
+# ================================================================
+@app.errorhandler(404)
+def not_found(e):
+    return render_template("404.html"), 404
+
+
+# ================================================================
+#  Run app
+# ================================================================
+if __name__ == "__main__":
+    app.run(debug=True, use_reloader=False)

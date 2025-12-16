@@ -6,7 +6,7 @@
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
-    <span class="text-white-50 small">Version 2.2.19</span>
+    <span class="text-white-50 small">Version 4.1.0</span>
 
     <!-- Toggler -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -56,14 +56,6 @@
   <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-workspace"></i> Instructor</a>
   <ul class="dropdown-menu" aria-labelledby="instMenu">
     <li class="dropdown-submenu">
-      <a class="dropdown-item" href="#" role="button">QR Code</a>
-      <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="{{ url_for('qr_generate_page') }}">Generate</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('qr_print_page') }}">Print</a></li>
-      </ul>
-    </li>
-    <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Assistants</a></li>
-    <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Reports</a>
       <ul class="dropdown-menu">
         <li><a class="dropdown-item" href="#" onclick="openAssistantReportDialog();return false;">Payroll Staff Hours</a></li>
@@ -72,7 +64,23 @@
         <li><a class="dropdown-item" href="#">Loaned Books</a></li>
       </ul>
     </li>
-    <li><a class="dropdown-item text-danger" href="#">Clear Database</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Assistants</a></li>
+    <li class="dropdown-submenu">
+      <a class="dropdown-item" href="#" role="button">Settings</a>
+      <ul class="dropdown-menu">
+        <li class="dropdown-submenu">
+          <a class="dropdown-item" href="#" role="button">QR Code</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="{{ url_for('qr_generate_page') }}" onclick="event.stopPropagation();">Generate</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('qr_print_page') }}" onclick="event.stopPropagation();">Print</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('qr_scanner') }}" onclick="event.stopPropagation();">Scanner</a></li>
+          </ul>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="#" onclick="resetActiveClass();return false;">Reset Active Class</a></li>
+        <li><a class="dropdown-item" href="#" onclick="resetAttendanceToday();return false;">Reset Attendance (today)</a></li>
+      </ul>
+    </li>
   </ul>
 </li>
 
@@ -180,6 +188,42 @@ function generateAllBookQRs(){
     .catch(err => {
       console.error('Error generating book QRs', err);
       alert('Error generating book QRs: ' + err);
+    });
+}
+
+// Reset active class (clears column 2)
+function resetActiveClass(){
+  fetch('/api/sessions/clear', { method: 'POST' })
+    .then(async r => {
+      if(!r.ok){
+        const text = await r.text();
+        throw new Error(text || `HTTP ${r.status}`);
+      }
+      return r.json();
+    })
+    .then(data => {
+      if(data.error){ throw new Error(data.error); }
+      alert(`Active class cleared. Stopped: ${data.stopped?.length || 0}`);
+      if(typeof fetchDashboardData === 'function'){ fetchDashboardData(); }
+    })
+    .catch(err => {
+      console.error('Error clearing active class', err);
+      alert('Error clearing active class: ' + err);
+    });
+}
+
+// Reset today's attendance (class & student attendance persistence)
+function resetAttendanceToday(){
+  if(!confirm('Reset today\'s attendance data? This will remove today\'s session records.')) return;
+  fetch('/api/attendance/reset_today', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      alert(`Attendance reset for ${data.date}. Deleted rows: ${data.deleted || 0}`);
+      if(typeof fetchDashboardData === 'function'){ fetchDashboardData(); }
+    })
+    .catch(err => {
+      console.error('Error resetting attendance', err);
+      alert('Error resetting attendance: ' + err);
     });
 }
 
@@ -434,6 +478,9 @@ function downloadStudentAttendancePDF(){
   margin-right: 0.15rem;
   display: none !important; /* Hidden by default */
   z-index: 1050; /* Ensure submenus appear above other content */
+}
+.dropdown-submenu:hover > .dropdown-menu {
+  display: block !important; /* Show submenu on hover */
 }
 .dropdown-submenu > .dropdown-menu[style*="display: block"] {
   display: block !important; /* Only show when explicitly set */
