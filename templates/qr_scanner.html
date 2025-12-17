@@ -65,7 +65,40 @@
   </div>
 </div>
 
+<!-- Debug Panel -->
+<div id="scannerDebugPanel" style="position:fixed; bottom:12px; right:12px; width:320px; max-height:240px; z-index:2100; background:#fff; border:1px solid #ced4da; box-shadow:0 4px 12px rgba(0,0,0,0.15); border-radius:6px;">
+  <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#0d6efd; color:#fff; border-radius:6px 6px 0 0;">
+    <strong style="font-size:0.95em;">Scanner Debug Log</strong>
+    <div>
+      <button id="scannerDebugCopy" class="btn btn-sm btn-light py-0 px-1">Copy</button>
+      <button id="scannerDebugClear" class="btn btn-sm btn-outline-light py-0 px-1">Clear</button>
+    </div>
+  </div>
+  <textarea id="scannerDebugArea" readonly tabindex="-1" style="width:100%; height:180px; font-size:12px; font-family:monospace; border:0; padding:6px; resize:none; outline:none; user-select:text;"></textarea>
+</div>
+
 <script>
+// Debug logging utility
+function scannerLogDebug(msg){
+  const ta = document.getElementById('scannerDebugArea');
+  const ts = new Date().toLocaleTimeString();
+  ta.value += `[${ts}] ${msg}\n`;
+  ta.scrollTop = ta.scrollHeight;
+  console.debug('[scanner]', msg);
+}
+
+// Debug panel buttons
+document.getElementById('scannerDebugCopy').addEventListener('click', () => {
+  const ta = document.getElementById('scannerDebugArea');
+  ta.select();
+  document.execCommand('copy');
+});
+document.getElementById('scannerDebugClear').addEventListener('click', () => {
+  document.getElementById('scannerDebugArea').value = '';
+});
+
+scannerLogDebug('Scanner page loaded');
+
 const scannerInput = document.getElementById('scannerInput');
 const statusContainer = document.getElementById('statusContainer');
 const statusAlert = document.getElementById('statusAlert');
@@ -79,6 +112,8 @@ let scanBuffer = '';
 let finalizeTimer = null;
 let displayTimer = null;
 let resetTimer = null;
+
+const IDLE_MS = 180; // idle gap that indicates scan end
 
 function clearAllBuffers(){
   scanBuffer = '';
@@ -108,7 +143,12 @@ function resetUI(){
 
 function scheduleFinalize(){
   if (finalizeTimer) clearTimeout(finalizeTimer);
-  finalizeTimer = setTimeout(() => finalizeScan(), 180);
+  finalizeTimer = setTimeout(() => {
+    // Only finalize if buffer is not empty
+    if (scanBuffer.length > 2){
+      finalizeScan();
+    }
+  }, IDLE_MS);
 }
 
 function startProgressCountdown(seconds){
@@ -142,61 +182,67 @@ function normalizePayload(str){
 }
 
 function deduplicateRepeatingDigits(numStr){
-  // Handle repeated digit patterns
-  // Examples: "333333" -> "33" (pattern repeats), "5577" -> "57" (each digit repeats), "77" -> "7" (digit repeats)
-  if (numStr.length < 2) return numStr;
-  
-  // First, try pattern-based deduplication (e.g., "5757" -> "57")
-  for (let patternLen = 1; patternLen <= Math.floor(numStr.length / 2); patternLen++){
-    const pattern = numStr.substring(0, patternLen);
-    let repeated = '';
-    for (let i = 0; i < Math.ceil(numStr.length / patternLen); i++){
-      repeated += pattern;
-    }
-    if (repeated.substring(0, numStr.length) === numStr){
-      console.log(`DEDUP: "${numStr}" is pattern "${pattern}" repeated`);
-      return pattern;
-    }
+  if(!numStr || numStr.length < 2) return numStr;
+  const uniqCount = new Set(numStr.split('')).size;
+
+  // Case A: all digits identical
+  if(uniqCount === 1){
+    if(numStr.length <= 2) return numStr;     // e.g., 44 stays 44
+    return numStr.slice(0, 2);                // e.g., 333333 -> 33
   }
-  
-  // Second, try digit-based deduplication (e.g., "5577" -> "57", where each digit repeats)
-  // Assume each digit repeats the same number of times
-  if (numStr.length % 2 === 0){
-    // Try taking every nth digit
-    for (let n = 2; n <= numStr.length / 2; n++){
-      if (numStr.length % n === 0){
+
+  // Case B: digit-repeat-based (e.g., 5577 -> 57)
+  if(numStr.length % 2 === 0){
+    for(let n=2; n<=numStr.length/2; n++){
+      if(numStr.length % n === 0){
         let result = '';
-        for (let i = 0; i < numStr.length; i += n){
-          result += numStr[i];
-        }
-        // Verify it's a valid deduplication
+        for(let i=0;i<numStr.length;i+=n) result += numStr[i];
         let reconstructed = '';
-        for (let digit of result){
-          for (let j = 0; j < n; j++) reconstructed += digit;
-        }
-        if (reconstructed === numStr){
-          console.log(`DEDUP: "${numStr}" is "${result}" with each digit repeated ${n} times`);
+        for(const d of result){ for(let j=0;j<n;j++) reconstructed += d; }
+        if(reconstructed === numStr){
+          console.log(`DEDUP: "${numStr}" -> "${result}" (each digit repeated ${n}x)`);
           return result;
         }
       }
     }
   }
-  
+
+  // Case C: pattern-based, avoid collapsing to single digit
+  for(let patternLen=2; patternLen<=Math.floor(numStr.length/2); patternLen++){
+    const pattern = numStr.substring(0, patternLen);
+    let repeated = '';
+    for(let i=0;i<Math.ceil(numStr.length/patternLen);i++) repeated += pattern;
+    if(repeated.substring(0, numStr.length) === numStr){
+      console.log(`DEDUP: "${numStr}" -> pattern "${pattern}"`);
+      return pattern;
+    }
+  }
+
   return numStr;
 }
 
 async function finalizeScan(){
-  const raw = scanBuffer;
-  const data = normalizePayload(raw);
+  try {
+    scannerLogDebug('finalizeScan called');
+    const raw = scanBuffer;
+    const data = normalizePayload(raw);
+    
+    // Only process if buffer has meaningful content (at least 3 chars for "ID:X")
+    if (!data || data.length < 3){
+      scannerLogDebug(`SKIP finalize: buffer too short or empty (${data.length} chars)`);
+      return;
+    }
+    
+    scannerLogDebug(`RAW=${JSON.stringify(raw)}`);
   
   // Debug: show raw data
   if (raw){
     document.getElementById('debugRaw').style.display = 'block';
     document.getElementById('debugRawText').textContent = JSON.stringify(raw);
-    console.log('RAW SCAN:', JSON.stringify(raw));
   }
   
   if (!data){
+    scannerLogDebug('Empty payload');
     showStatus('Empty scan', 'warning');
     scheduleReset();
     return;
@@ -206,12 +252,25 @@ async function finalizeScan(){
   let type = null;
   let id = null;
   
-  // Try direct match first: ID:43, ASST:3, BOOK:12, etc.
-  const directMatch = raw.match(/^(ID|ASST|ASSISTANT|BOOK)\s*:?\s*(\d+)$/i);
-  if (directMatch){
-    console.log('DIRECT MATCH:', directMatch);
-    type = (directMatch[1].toUpperCase() === 'ASSISTANT') ? 'ASST' : directMatch[1].toUpperCase();
-    id = parseInt(directMatch[2], 10);
+  // Try HID format first: "ID.{n} Name.{name} {initial}."
+  // This is the format from DS9208 in HID mode with separators between fields
+  const hidMatch = raw.match(/ID\.\s*(\d+)/i);
+  if (hidMatch){
+    console.log('HID MATCH:', hidMatch);
+    type = 'ID';
+    id = parseInt(hidMatch[1], 10);
+    scannerLogDebug(`HID match -> type=${type} id=${id} (from "ID.${hidMatch[1]}")`);
+  }
+  
+  // Try direct match: ID:43, ASST:3, BOOK:12, etc.
+  if (!type){
+    const directMatch = raw.match(/^(ID|ASST|ASSISTANT|BOOK)\s*:?\s*(\d+)$/i);
+    if (directMatch){
+      console.log('DIRECT MATCH:', directMatch);
+      type = (directMatch[1].toUpperCase() === 'ASSISTANT') ? 'ASST' : directMatch[1].toUpperCase();
+      id = parseInt(directMatch[2], 10);
+      scannerLogDebug(`DIRECT match -> type=${type} id=${id}`);
+    }
   }
   
   // Try flexible match for malformed input like "IID0:+333333"
@@ -223,6 +282,7 @@ async function finalizeScan(){
       let idStr = flexMatch[2];
       idStr = deduplicateRepeatingDigits(idStr);
       id = parseInt(idStr, 10);
+      scannerLogDebug(`FLEX match -> type=${type} id=${id} (from ${flexMatch[2]})`);
     }
   }
   
@@ -251,6 +311,7 @@ async function finalizeScan(){
       console.log('SEARCH MATCH:', m2);
       type = (m2[1].toUpperCase()==='ASSISTANT')?'ASST':m2[1].toUpperCase();
       id = parseInt(m2[2], 10);
+      scannerLogDebug(`SEARCH match -> type=${type} id=${id}`);
     }
   }
 
@@ -263,12 +324,14 @@ async function finalizeScan(){
       let idStr = lastAttempt[2];
       idStr = deduplicateRepeatingDigits(idStr);
       id = parseInt(idStr, 10);
+      scannerLogDebug(`LAST ATTEMPT -> type=${type} id=${id}`);
     }
   }
 
   console.log('FINAL TYPE:', type, 'ID:', id);
 
   if (!type || !Number.isFinite(id)){
+    scannerLogDebug(`UNRECOGNIZED id=${id} type=${type}`);
     showStatus('Unrecognized QR', 'warning');
     scheduleReset();
     return;
@@ -311,16 +374,56 @@ async function finalizeScan(){
   }
 
   // Display ID and name for 3 seconds with progress bar
-  showScanResult(id, displayName);
+  // For students: toggle session (start/checkout)
+  if (type === 'ID'){
+    try {
+      const toggleRes = await fetch('/api/sessions/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: id })
+      });
+      const toggleData = await toggleRes.json();
+      if (toggleRes.ok && toggleData.action){
+        const action = toggleData.action === 'started' ? '✓ Started' : '✓ Checked Out';
+        scannerLogDebug(`TOGGLE OK id=${id} action=${action} name=${toggleData.name}`);
+        showScanResult(id, displayName, action);
+      } else {
+        scannerLogDebug(`TOGGLE FAIL id=${id} status=${toggleRes.status} body=${JSON.stringify(toggleData)}`);
+        showScanResult(id, displayName, '');
+      }
+    } catch (err) {
+      console.error('toggle error:', err);
+      scannerLogDebug(`ERROR id=${id} msg=${err.message}`);
+      showScanResult(id, displayName, '');
+    }
+  } else {
+    scannerLogDebug(`Non-student scan type=${type} id=${id}`);
+    showScanResult(id, displayName, '');
+  }
   addScanToLog(displayName);
   startProgressCountdown(3);
+  
+  // Clear buffer immediately after finalize to prevent duplicate processing
+  scanBuffer = '';
+  scannerLogDebug('finalizeScan complete - buffer cleared');
+  
+  } catch(err) {
+    scannerLogDebug(`finalizeScan ERROR: ${err.message} | stack: ${err.stack}`);
+    console.error('finalizeScan error:', err);
+    scanBuffer = '';
+  }
 }
 
-function showScanResult(id, name){
+function showScanResult(id, name, action){
+  let actionHTML = '';
+  if (action) {
+    actionHTML = `<div style="font-size:1em; color:#28a745; margin-top:8px; font-weight:600;">${action}</div>`;
+  }
   lastScanInfo.innerHTML = `
     <div>
       <div style="font-size:1.1em; color:#666;">ID: <strong style="color:#0d6efd;">${id}</strong></div>
       <div class="fw-bold" style="font-size:1.3em; margin-top:8px;">${name}</div>
+      ${actionHTML}
       <small class="text-muted">Scanned at ${new Date().toLocaleTimeString()}</small>
     </div>
   `;
@@ -361,20 +464,46 @@ function addScanToLog(name) {
 
 // Keyboard handler: capture keystrokes, no Enter needed
 function onKeyDown(e){
-  if (document.activeElement !== scannerInput) scannerInput.focus();
-  const k = e.key;
-  if (k === 'Enter'){ e.preventDefault(); finalizeScan(); return; }
-  if (k.length === 1){
-    scanBuffer += k;
-    scheduleFinalize();
+  try {
+    const k = e.key;
+    scannerLogDebug(`KEY '${k}' bufLen=${scanBuffer.length}`);
+    
+    if (document.activeElement !== scannerInput) scannerInput.focus();
+    
+    // Block disruptive browser shortcuts commonly sent by some scanners as terminators
+    if (e.ctrlKey) {
+      const kk = (e.key || '').toLowerCase();
+      if (["j","p","o","s","w"].includes(kk)) {
+        e.preventDefault();
+        e.stopPropagation();
+        scannerLogDebug(`Blocked Ctrl+${kk.toUpperCase()}`);
+        return;
+      }
+    }
+    
+    if (k === 'Enter'){ 
+      e.preventDefault(); 
+      scannerLogDebug('ENTER pressed - finalizing');
+      finalizeScan(); 
+      return; 
+    }
+    
+    if (k.length === 1){
+      scanBuffer += k;
+      scheduleFinalize();
+    }
+  } catch(err) {
+    scannerLogDebug(`onKeyDown ERROR: ${err.message}`);
+    console.error('onKeyDown error:', err);
   }
 }
 
 // Initialize
 clearAllBuffers();
 resetUI();
-document.addEventListener('keydown', onKeyDown);
-scannerInput.addEventListener('keydown', onKeyDown);
+// Use capture phase to intercept keystrokes even when input has focus
+document.addEventListener('keydown', onKeyDown, {capture: true});
+scannerLogDebug('Keydown listener attached (capture=true)');
 scannerInput.focus();
 </script>
 {% endblock %}

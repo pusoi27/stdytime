@@ -147,6 +147,54 @@ def register_api_routes(app):
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/sessions/toggle", methods=["POST"])
+    def api_sessions_toggle():
+        """Toggle a student's session: start if not active, stop if active.
+        Request JSON: {"student_id": <id>}
+        Returns: {"action": "started"|"checked_out", "student_id": <id>, "name": <name>}
+        """
+        try:
+            data = request.get_json() or {}
+            student_id = data.get("student_id")
+            
+            if not student_id:
+                return jsonify({"error": "Missing student_id"}), 400
+            
+            # Get student info
+            student = student_manager.get_student(student_id)
+            if not student:
+                return jsonify({"error": "Student not found"}), 404
+            
+            student_name = student[1]  # name is second field
+            
+            # Check if student has an open session
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                open_session = c.execute(
+                    "SELECT id FROM sessions WHERE student_id=? AND end_time IS NULL LIMIT 1",
+                    (student_id,)
+                ).fetchone()
+            
+            if open_session:
+                # Stop the session (check out)
+                timer_manager.stop_session(student_id)
+                active_students_cache.pop(student_id, None)
+                return jsonify({
+                    "action": "checked_out",
+                    "student_id": student_id,
+                    "name": student_name
+                }), 200
+            else:
+                # Start a new session
+                timer_manager.start_session(student_id)
+                return jsonify({
+                    "action": "started",
+                    "student_id": student_id,
+                    "name": student_name
+                }), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/attendance/reset_today", methods=["POST"])
     def api_attendance_reset_today():
         """Reset today's attendance data and clear any active class timers.

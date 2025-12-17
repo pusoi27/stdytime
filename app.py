@@ -130,7 +130,10 @@ from routes.reports import register_reports_routes
 # Register scanner route
 @app.route('/qr/scanner')
 def qr_scanner():
-    """Display QR code scanner input page for hardware barcode scanner."""
+    """Display QR code scanner input Name:Kennedy D.
+    Name:Kennedy D.
+    Name:Kennedy D.
+    page for hardware barcode scanner."""
     return render_template('qr_scanner.html')
 
 register_dashboard_routes(app)

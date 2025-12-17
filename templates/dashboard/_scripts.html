@@ -242,4 +242,279 @@ document.getElementById("searchInput").addEventListener("input",e=>{
 });
 
 fetchDashboardData();
+
+// ---------------- QR Keyboard Scanner on Dashboard ----------------
+// Goal: When a student QR is scanned on the main dashboard, automatically
+// start a session, or if already active, check the student out.
+// We listen for fast keystrokes from the hardware scanner and finalize
+// the payload after a brief idle timeout.
+
+(function(){
+  let scanBuffer = '';
+  let finalizeTimer = null;
+  let forceFinalizeTimer = null;
+  let lastKeyTs = 0;
+  const IDLE_MS = 180; // idle gap that indicates scan end
+  const FORCE_MS = 1000; // max wait before forcing finalize
+  const KEEP_FOCUS_MS = 2000; // refocus interval to keep page ready
+  let focusTimer = null;
+  let listenersAttached = false;
+
+  // Debug panel to collect logs visible on the page
+  function ensureDebugPanel(){
+    if(document.getElementById('dashDebugPanel')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'dashDebugPanel';
+    wrap.style.position='fixed';
+    wrap.style.bottom='12px';
+    wrap.style.right='12px';
+    wrap.style.width='320px';
+    wrap.style.maxHeight='240px';
+    wrap.style.zIndex='2100';
+    wrap.style.background='#fff';
+    wrap.style.border='1px solid #ced4da';
+    wrap.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';
+    wrap.style.borderRadius='6px';
+    wrap.innerHTML = `
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#0d6efd; color:#fff; border-radius:6px 6px 0 0;">
+        <strong style="font-size:0.95em;">Scanner Debug Log</strong>
+        <div>
+          <button id="dashDebugCopy" class="btn btn-sm btn-light py-0 px-1">Copy</button>
+          <button id="dashDebugClear" class="btn btn-sm btn-outline-light py-0 px-1">Clear</button>
+        </div>
+      </div>
+      <textarea id="dashDebugArea" readonly tabindex="-1" style="width:100%; height:180px; font-size:12px; font-family:monospace; border:0; padding:6px; resize:none; outline:none; user-select:text;"></textarea>
+    `;
+    document.body.appendChild(wrap);
+    document.getElementById('dashDebugCopy').onclick = () => {
+      const ta = document.getElementById('dashDebugArea');
+      ta.select();
+      document.execCommand('copy');
+    };
+    document.getElementById('dashDebugClear').onclick = () => {
+      const ta = document.getElementById('dashDebugArea');
+      ta.value='';
+    };
+  }
+
+  function logDebug(msg){
+    ensureDebugPanel();
+    const ta = document.getElementById('dashDebugArea');
+    const ts = new Date().toLocaleTimeString();
+    ta.value += `[${ts}] ${msg}\n`;
+    ta.scrollTop = ta.scrollHeight;
+    console.debug('[dashboard][scan]', msg);
+  }
+
+  function isTypingInField(){
+    const ae = document.activeElement;
+    if(!ae) return false;
+    const tag = ae.tagName?.toLowerCase();
+    const isEditable = ae.isContentEditable;
+    // Allow scanning even if search field is focused, but don't intercept
+    // normal typing (scanner sends rapid keystrokes, we collect globally)
+    return (tag === 'textarea') || (tag === 'input' && ae.type !== 'button' && ae.type !== 'checkbox' && ae.type !== 'radio') || isEditable;
+  }
+
+  function normalizePayload(str){
+    return String(str||'')
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      .replace(/[\u202F\u2009\u00A0]/g, ' ')
+      .trim();
+  }
+
+  function deduplicateRepeatingDigits(numStr){
+    if(!numStr || numStr.length < 2) return numStr;
+    const uniqCount = new Set(numStr.split('')).size;
+
+    // Case A: all digits identical
+    if(uniqCount === 1){
+      // If length <= 2, keep as-is (e.g., 44 is valid ID 44)
+      if(numStr.length <= 2) return numStr;
+      // If length > 2, keep first two digits (e.g., 333333 -> 33)
+      return numStr.slice(0, 2);
+    }
+
+    // Case B: digit-repeat-based (e.g., 5577 -> 57, each digit repeats n times)
+    if(numStr.length % 2 === 0){
+      for(let n=2; n<=numStr.length/2; n++){
+        if(numStr.length % n === 0){
+          let result = '';
+          for(let i=0;i<numStr.length;i+=n) result += numStr[i];
+          let reconstructed = '';
+          for(const d of result){ for(let j=0;j<n;j++) reconstructed += d; }
+          if(reconstructed === numStr) return result;
+        }
+      }
+    }
+
+    // Case C: pattern-based, but avoid collapsing to single digit
+    for(let patternLen=2; patternLen<=Math.floor(numStr.length/2); patternLen++){
+      const pattern = numStr.substring(0, patternLen);
+      let repeated = '';
+      for(let i=0;i<Math.ceil(numStr.length/patternLen);i++) repeated += pattern;
+      if(repeated.substring(0, numStr.length) === numStr) return pattern;
+    }
+
+    return numStr;
+  }
+
+  async function finalizeScan(){
+    const raw = scanBuffer;
+    scanBuffer = '';
+    if(finalizeTimer){ clearTimeout(finalizeTimer); finalizeTimer = null; }
+    if(forceFinalizeTimer){ clearTimeout(forceFinalizeTimer); forceFinalizeTimer = null; }
+
+    const data = normalizePayload(raw);
+    if(!data) return;
+    logDebug(`RAW=${JSON.stringify(raw)}`);
+
+    // Try to extract student ID from a variety of formats produced by scanners
+    let sid = null;
+
+    // Tier 1: direct clean pattern, e.g., "ID:57"
+    let m = data.match(/^(ID|ASST|ASSISTANT)\s*[:;=]?\s*(\d+)$/i);
+    if(m){
+      let idStr = m[2];
+      sid = parseInt(deduplicateRepeatingDigits(idStr),10);
+      logDebug(`DIRECT match -> ${sid}`);
+    }
+
+    // Tier 2: flexible pattern with noise, e.g., "IID0:+5577" (grab digits after token)
+    if(sid == null){
+      m = data.match(/(ID|ASST|ASSISTANT)[^\d]*[:+;=]*([0-9]+)/i);
+      if(m){
+        let idStr = m[2];
+        if(idStr.length < 2){
+          const later = data.match(/(\d{2,6})(?!.*\d)/);
+          if(later) idStr = later[1];
+        }
+        sid = parseInt(deduplicateRepeatingDigits(idStr),10);
+        logDebug(`FLEX match -> ${sid} from ${idStr}`);
+      }
+    }
+
+    // Tier 3: search anywhere for the last digits block, e.g., trailing "77jj" -> 77
+    if(sid == null){
+      m = data.match(/(\d{2,6})(?!.*\d)/);
+      if(m){
+        sid = parseInt(deduplicateRepeatingDigits(m[1]),10);
+        logDebug(`LAST-DIGITS match -> ${sid}`);
+      }
+    }
+
+    // Tier 4: all digits only
+    if(sid == null){
+      const onlyDigits = data.match(/^(\d{1,6})$/);
+      if(onlyDigits){ sid = parseInt(deduplicateRepeatingDigits(onlyDigits[1]),10); logDebug(`ONLY-DIGITS -> ${sid}`); }
+    }
+
+    if(!Number.isFinite(sid)) return;
+
+    // Toggle the session and refresh the dashboard
+    try{
+      const res = await fetch('/api/sessions/toggle',{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ student_id: sid })
+      });
+      const j = await res.json().catch(()=>({}));
+      // Show a quick toast-like feedback
+      if(!res.ok){
+        console.warn('[dashboard][scan] toggle failed', j);
+        showQuickToast(`ID ${sid}: ${j.error || 'Toggle failed'}`, true);
+        logDebug(`TOGGLE FAIL id=${sid} status=${res.status} body=${JSON.stringify(j)}`);
+      } else {
+        const action = (j && j.action) ? (j.action==='started'?'Started':'Checked Out') : 'Updated';
+        showQuickToast(`${j.name||('Student '+sid)} — ${action}`);
+        logDebug(`TOGGLE OK id=${sid} action=${action}`);
+      }
+      // refresh dashboard columns
+      fetchDashboardData();
+    }catch(err){
+      console.error('[dashboard] toggle error', err);
+      showQuickToast('Error toggling session for ID '+sid, true);
+      logDebug(`ERROR id=${sid} msg=${err.message}`);
+    }
+
+    // ensure buffers are clear and ready for next scan immediately
+    scanBuffer = '';
+    lastKeyTs = 0;
+  }
+
+  function scheduleFinalize(){
+    if(finalizeTimer) clearTimeout(finalizeTimer);
+    finalizeTimer = setTimeout(finalizeScan, IDLE_MS);
+    if(forceFinalizeTimer) clearTimeout(forceFinalizeTimer);
+    forceFinalizeTimer = setTimeout(finalizeScan, FORCE_MS);
+  }
+
+  function onKeyDown(e){
+    // Block disruptive browser shortcuts (downloads/print/save/open/close)
+    if (e.ctrlKey) {
+      const kk = (e.key || '').toLowerCase();
+      if (["j","p","o","s","w"].includes(kk)) {
+        e.preventDefault();
+        e.stopPropagation();
+        logDebug(`BLOCKED Ctrl+${kk.toUpperCase()}`);
+        return;
+      }
+      // Ignore other Ctrl combos
+      return;
+    }
+    // Ignore Alt/Meta
+    if(e.altKey || e.metaKey) return;
+    const k = e.key;
+    if(k === 'Enter'){ e.preventDefault(); finalizeScan(); return; }
+    if(k.length === 1){
+      const now = Date.now();
+      logDebug(`KEY '${k}' buffer_before='${scanBuffer}' dt=${now-lastKeyTs}ms`);
+      lastKeyTs = now;
+      // If the user is typing in the search field, allow typing but still build the scan buffer
+      // Scanner sends fast sequences; human typing won't trigger finalize due to larger gaps
+      scanBuffer += k;
+      scheduleFinalize();
+    }
+  }
+
+  // Keep focus on body to avoid losing key events after first scan
+  function keepFocus(){
+    if(focusTimer) clearTimeout(focusTimer);
+    if(document.activeElement && document.activeElement.id === 'dashDebugArea'){
+      // don't steal focus if user is copying logs
+    } else {
+      // attempt to focus body without moving cursor
+      if(document.body) document.body.focus({preventScroll:true});
+    }
+    focusTimer = setTimeout(keepFocus, KEEP_FOCUS_MS);
+  }
+
+  function attachListeners(){
+    if(listenersAttached) return;
+    document.addEventListener('keydown', onKeyDown, {capture:true});
+    window.addEventListener('keydown', onKeyDown, {capture:true});
+    document.addEventListener('keypress', onKeyDown, {capture:true});
+    window.addEventListener('keypress', onKeyDown, {capture:true});
+    listenersAttached = true;
+    logDebug('Listeners attached (document/window, keydown/keypress, capture=true)');
+  }
+
+  function showQuickToast(msg, isError){
+    let el = document.getElementById('dashQuickToast');
+    if(!el){
+      el = document.createElement('div');
+      el.id = 'dashQuickToast';
+      el.style.position='fixed'; el.style.top='12px'; el.style.right='12px';
+      el.style.zIndex='2000'; el.style.minWidth='220px';
+      document.body.appendChild(el);
+    }
+    el.innerHTML = `<div class="alert ${isError?'alert-danger':'alert-success'} shadow-sm py-2 px-3 mb-0">${msg}</div>`;
+    setTimeout(()=>{ if(el) el.innerHTML=''; }, 2500);
+  }
+
+  // Attach global keydown listener on dashboard
+  ensureDebugPanel();
+  keepFocus();
+  attachListeners();
+})();
 </script>
