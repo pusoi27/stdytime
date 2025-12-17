@@ -1,10 +1,77 @@
 <script>
 const SEAT_LIMIT = 20;
+const SEAT_LIMIT_FULLSCREEN = 40; // More seats when maximized
 const DURATION_LIMITS = { "S1": 30*60, "S2": 60*60 };
+const IDLE_TIMEOUT_MS = 60000; // 1 minute
 const isActiveClassWindow = true; // only dashboard should handle class check-in/out
+
+let idleTimer = null;
+let isFullscreenMode = false;
+let lastActivityTime = Date.now();
 
 function pageIsReadyForScan(){
   return document.visibilityState === 'visible' && document.hasFocus();
+}
+
+function recordActivity(){
+  lastActivityTime = Date.now();
+  if(isFullscreenMode){
+    exitFullscreenMode();
+  }
+  resetIdleTimer();
+}
+
+function resetIdleTimer(){
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(checkIdleState, IDLE_TIMEOUT_MS);
+}
+
+function checkIdleState(){
+  // Only enter fullscreen if there are active students
+  const seatGrid = document.getElementById('seatGrid');
+  const activeCards = seatGrid.querySelectorAll('.seat-card');
+  if(activeCards.length > 0 && !isFullscreenMode){
+    enterFullscreenMode();
+  }
+}
+
+function enterFullscreenMode(){
+  isFullscreenMode = true;
+  const col1 = document.querySelector('.col-lg-2');
+  const col2 = document.querySelector('.col-lg-8');
+  const col3 = document.querySelector('.col-lg-2');
+  
+  if(col1) col1.style.display = 'none';
+  if(col3) col3.style.display = 'none';
+  if(col2){
+    col2.className = 'col-12';
+    col2.querySelector('.card').style.height = '100vh';
+  }
+  
+  // Rebuild grid with more seats
+  fetchDashboardData();
+}
+
+function exitFullscreenMode(){
+  if(!isFullscreenMode) return;
+  isFullscreenMode = false;
+  
+  const col1 = document.querySelector('.col-12');
+  const hiddenCols = document.querySelectorAll('[style*="display: none"]');
+  
+  if(col1){
+    col1.className = 'col-lg-8 col-md-6';
+    col1.querySelector('.card').style.height = '';
+  }
+  
+  hiddenCols.forEach(col => {
+    if(col.classList.contains('col-lg-2')){
+      col.style.display = '';
+    }
+  });
+  
+  // Rebuild grid with normal seat count
+  fetchDashboardData();
 }
 
 function formatHHMMSS(sec){
@@ -142,7 +209,8 @@ function buildSeatGrid(activeSessions){
   grid.innerHTML="";
   document.getElementById("activeCount").innerText=
     `(${activeSessions.length} active)`;
-  for(let i=0;i<SEAT_LIMIT;i++){
+  const seatLimit = isFullscreenMode ? SEAT_LIMIT_FULLSCREEN : SEAT_LIMIT;
+  for(let i=0;i<seatLimit;i++){
     const seatLabel="Seat "+(i+1);
     const col=document.createElement("div"); col.className="col";
     const s=activeSessions[i];
@@ -247,6 +315,73 @@ document.getElementById("searchInput").addEventListener("input",e=>{
 });
 
 fetchDashboardData();
+
+// ---------------- Idle Fullscreen Mode ----------------
+function recordActivity(){
+  if(isFullscreenMode){
+    exitFullscreenMode();
+  }
+  resetIdleTimer();
+}
+
+function resetIdleTimer(){
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(checkIdleState, IDLE_TIMEOUT_MS);
+}
+
+function checkIdleState(){
+  const seatGrid = document.getElementById('seatGrid');
+  const activeCards = seatGrid.querySelectorAll('.seat-card');
+  if(activeCards.length > 0 && !isFullscreenMode){
+    enterFullscreenMode();
+  }
+}
+
+function enterFullscreenMode(){
+  isFullscreenMode = true;
+  const col1 = document.querySelectorAll('.col-lg-2')[0];
+  const col2 = document.querySelector('.col-lg-8');
+  const col3 = document.querySelectorAll('.col-lg-2')[1];
+  
+  if(col1) col1.style.display = 'none';
+  if(col3) col3.style.display = 'none';
+  if(col2){
+    col2.classList.remove('col-lg-8', 'col-md-6');
+    col2.classList.add('col-12');
+    const card = col2.querySelector('.card');
+    if(card) card.style.height = '98vh';
+  }
+  
+  fetchDashboardData();
+}
+
+function exitFullscreenMode(){
+  if(!isFullscreenMode) return;
+  isFullscreenMode = false;
+  
+  const col1 = document.querySelectorAll('.col-lg-2')[0];
+  const col2 = document.querySelector('.col-12');
+  const col3 = document.querySelectorAll('.col-lg-2')[1];
+  
+  if(col1) col1.style.display = '';
+  if(col3) col3.style.display = '';
+  if(col2){
+    col2.classList.remove('col-12');
+    col2.classList.add('col-lg-8', 'col-md-6');
+    const card = col2.querySelector('.card');
+    if(card) card.style.height = '';
+  }
+  
+  fetchDashboardData();
+}
+
+// Track activity
+document.addEventListener('mousemove', recordActivity, {passive: true});
+document.addEventListener('click', recordActivity, {passive: true});
+document.addEventListener('keydown', recordActivity, {passive: true});
+document.addEventListener('scroll', recordActivity, {passive: true});
+document.addEventListener('touchstart', recordActivity, {passive: true});
+resetIdleTimer();
 
 // ---------------- QR Keyboard Scanner on Dashboard ----------------
 // Goal: When a student QR is scanned on the main dashboard, automatically
