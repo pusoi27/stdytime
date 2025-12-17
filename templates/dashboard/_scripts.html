@@ -221,11 +221,11 @@ function buildSeatGrid(activeSessions){
         const card=document.createElement("div");
         card.className="card text-center shadow-sm seat-card";
         card.innerHTML=`
-          <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="56" height="56" alt="photo">
-          <h6 class="fw-semibold mb-0 small">${s.name}</h6>
-          <small class="text-muted small">${s.subject} – ${seatLabel}</small>
-          <div class="timer fw-bold" style="font-size:1.1em; margin-top:0.5rem;">--:--:--</div>
-          <small class="text-muted started small">
+          <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="50" height="50" alt="photo">
+          <h6 class="fw-semibold mb-0" style="font-size:0.85em;">${s.name}</h6>
+          <small class="text-muted" style="font-size:0.75em;">${s.subject} – ${seatLabel}</small>
+          <div class="timer fw-bold" style="font-size:0.95em; margin-top:0.4rem;">--:--:--</div>
+          <small class="text-muted started" style="font-size:0.7em;">
             Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>`;
       card.onclick=async()=>{
         if(confirm("Stop session for "+s.name+"?")){
@@ -243,12 +243,37 @@ function buildSeatGrid(activeSessions){
       },1000);
     }else{
       col.innerHTML=`<div class="card p-3 text-center shadow-sm seat-empty">
-          <div class="fw-light text-muted" style="height:100px;
-             display:flex;align-items:center;justify-content:center;">
+          <div class="fw-light text-muted" style="height:90px;
+             display:flex;align-items:center;justify-content:center;font-size:0.85em;">
             ${seatLabel} Empty
           </div></div>`;
       grid.appendChild(col);
     }
+  }
+  
+  // Handle overflow students (21+)
+  const overflowContainer = document.getElementById('overflowStudents');
+  const overflowList = document.getElementById('overflowList');
+  const overflowStudents = activeSessions.slice(seatLimit);
+  
+  if(overflowStudents.length > 0){
+    overflowContainer.style.display = 'block';
+    overflowList.innerHTML = '';
+    overflowStudents.forEach(s => {
+      const badge = document.createElement('span');
+      badge.className = 'badge bg-warning text-dark';
+      badge.textContent = s.name;
+      badge.style.cursor = 'pointer';
+      badge.onclick = async() => {
+        if(confirm(`Stop session for ${s.name}?`)){
+          await fetch(`/api/students/stop/${s.id}`, {method:'POST'});
+          fetchDashboardData();
+        }
+      };
+      overflowList.appendChild(badge);
+    });
+  } else {
+    overflowContainer.style.display = 'none';
   }
 }
 
