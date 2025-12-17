@@ -179,6 +179,35 @@ function startProgressCountdown(seconds){
   resetTimer = setTimeout(() => resetUI(), seconds * 1000);
 }
 
+function deduplicateCharacters(str){
+  // Scanner sends each character 4x for error correction: IIIIDDDD -> ID
+  // Apply pattern-based deduplication across the entire string
+  if(!str || str.length < 2) return str;
+  
+  // Try different repeat factors (4x, 3x, 2x) and pick the best match
+  for(let n of [4, 3, 2]){
+    if(str.length % n !== 0) continue;
+    let candidate = '';
+    let matches = true;
+    for(let i=0; i<str.length; i+=n){
+      const chunk = str.substring(i, i+n);
+      const firstChar = chunk[0];
+      // Check if all chars in chunk are identical
+      if(chunk.split('').every(c => c === firstChar)){
+        candidate += firstChar;
+      } else {
+        matches = false;
+        break;
+      }
+    }
+    if(matches && candidate.length > 0){
+      console.log(`CHAR DEDUP: "${str.substring(0,40)}..." -> "${candidate.substring(0,20)}..." (${n}x repetition)`);
+      return candidate;
+    }
+  }
+  return str;
+}
+
 function normalizePayload(str){
   return str
     .replace(/\r\n/g, "\n")
@@ -238,7 +267,9 @@ async function finalizeScan(){
     isProcessing = true;
     
     scannerLogDebug('finalizeScan called');
-    const raw = scanBuffer;
+    let raw = scanBuffer;
+    // Deduplicate character-level repetition first (scanner sends 4x chars)
+    raw = deduplicateCharacters(raw);
     const data = normalizePayload(raw);
     
     // Only process if buffer has meaningful content (at least 3 chars for "ID:X")

@@ -321,6 +321,33 @@ fetchDashboardData();
     return (tag === 'textarea') || (tag === 'input' && ae.type !== 'button' && ae.type !== 'checkbox' && ae.type !== 'radio') || isEditable;
   }
 
+  function deduplicateCharacters(str){
+    // Scanner sends each character 4x for error correction: IIIIDDDD -> ID
+    if(!str || str.length < 2) return str;
+    
+    // Try different repeat factors (4x, 3x, 2x)
+    for(let n of [4, 3, 2]){
+      if(str.length % n !== 0) continue;
+      let candidate = '';
+      let matches = true;
+      for(let i=0; i<str.length; i+=n){
+        const chunk = str.substring(i, i+n);
+        const firstChar = chunk[0];
+        if(chunk.split('').every(c => c === firstChar)){
+          candidate += firstChar;
+        } else {
+          matches = false;
+          break;
+        }
+      }
+      if(matches && candidate.length > 0){
+        logDebug(`CHAR DEDUP: ${n}x repetition detected`);
+        return candidate;
+      }
+    }
+    return str;
+  }
+
   function normalizePayload(str){
     return String(str||'')
       .replace(/\r\n/g, "\n")
@@ -366,11 +393,13 @@ fetchDashboardData();
   }
 
   async function finalizeScan(){
-    const raw = scanBuffer;
+    let raw = scanBuffer;
     scanBuffer = '';
     if(finalizeTimer){ clearTimeout(finalizeTimer); finalizeTimer = null; }
     if(forceFinalizeTimer){ clearTimeout(forceFinalizeTimer); forceFinalizeTimer = null; }
 
+    // Deduplicate character-level repetition first (scanner sends 4x chars)
+    raw = deduplicateCharacters(raw);
     const data = normalizePayload(raw);
     if(!data) return;
     logDebug(`RAW=${JSON.stringify(raw)}`);
