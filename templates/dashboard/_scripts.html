@@ -1,6 +1,11 @@
 <script>
 const SEAT_LIMIT = 20;
 const DURATION_LIMITS = { "S1": 30*60, "S2": 60*60 };
+const isActiveClassWindow = true; // only dashboard should handle class check-in/out
+
+function pageIsReadyForScan(){
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
 
 function formatHHMMSS(sec){
   const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60;
@@ -443,6 +448,7 @@ fetchDashboardData();
   }
 
   function scheduleFinalize(){
+    if (!isActiveClassWindow || !pageIsReadyForScan()) return;
     if(finalizeTimer) clearTimeout(finalizeTimer);
     finalizeTimer = setTimeout(finalizeScan, IDLE_MS);
     if(forceFinalizeTimer) clearTimeout(forceFinalizeTimer);
@@ -450,6 +456,7 @@ fetchDashboardData();
   }
 
   function onKeyDown(e){
+    if (!isActiveClassWindow || !pageIsReadyForScan()) return;
     // Block disruptive browser shortcuts (downloads/print/save/open/close)
     if (e.ctrlKey) {
       const kk = (e.key || '').toLowerCase();

@@ -113,8 +113,13 @@ let finalizeTimer = null;
 let displayTimer = null;
 let resetTimer = null;
 let isProcessing = false; // Guard to prevent duplicate finalizeScan calls
+const isActiveClassWindow = true; // Only this page should handle class check-in/out
 
 const IDLE_MS = 180; // idle gap that indicates scan end
+
+function pageIsReadyForScan(){
+  return document.visibilityState === 'visible' && document.hasFocus();
+}
 
 function clearAllBuffers(){
   scanBuffer = '';
@@ -143,6 +148,7 @@ function resetUI(){
 }
 
 function scheduleFinalize(){
+  if (!isActiveClassWindow || !pageIsReadyForScan()) return;
   if (finalizeTimer) clearTimeout(finalizeTimer);
   finalizeTimer = setTimeout(() => {
     // Only finalize if buffer is not empty
@@ -225,7 +231,7 @@ function deduplicateRepeatingDigits(numStr){
 async function finalizeScan(){
   try {
     // Guard against duplicate processing
-    if (isProcessing) {
+    if (isProcessing || !isActiveClassWindow || !pageIsReadyForScan()) {
       scannerLogDebug('finalizeScan already processing, skipping duplicate call');
       return;
     }
@@ -475,6 +481,7 @@ function addScanToLog(name) {
 // Keyboard handler: capture keystrokes, no Enter needed
 function onKeyDown(e){
   try {
+    if (!isActiveClassWindow || !pageIsReadyForScan()) return;
     const k = e.key;
     scannerLogDebug(`KEY '${k}' bufLen=${scanBuffer.length}`);
     
