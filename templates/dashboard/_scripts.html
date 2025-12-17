@@ -117,9 +117,36 @@ async function fetchDashboardData(){
   const sessions=await resSess.json();
   const resAssist=await fetch('/api/assistants/list');
   const assistants=await resAssist.json();
-  buildStudentList(students);
-  buildSeatGrid(sessions);
-  buildCheckedList(students);
+  
+  // Deduplicate active sessions by student id (safety against duplicates)
+  const seenActive = new Set();
+  const uniqueSessions = [];
+  for(const s of sessions){
+    const sid = s.id ?? s.student_id ?? s.sid;
+    if(sid == null) continue;
+    if(!seenActive.has(sid)){
+      seenActive.add(sid);
+      uniqueSessions.push(s);
+    }
+  }
+  const activeIds = seenActive;
+  
+  // Determine checked-out students
+  const checkedIds = new Set(
+    (students||[])
+      .filter(st => st.status === 'checked')
+      .map(st => st.id)
+  );
+  
+  // Filter lists to ensure exclusivity across columns
+  const studentsAvailable = (students||[])
+    .filter(st => st.status === 'registered' && !activeIds.has(st.id) && !checkedIds.has(st.id));
+  const checkedOnly = (students||[])
+    .filter(st => st.status === 'checked' && !activeIds.has(st.id));
+
+  buildStudentList(studentsAvailable);
+  buildSeatGrid(uniqueSessions);
+  buildCheckedList(checkedOnly);
   buildAssistantsList(assistants);
   // After rebuilding DOM, ensure images are refreshed (cache-bust)
   updateAllPhotos(students);
