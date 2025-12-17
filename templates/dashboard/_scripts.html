@@ -218,15 +218,25 @@ function buildSeatGrid(activeSessions){
       const start=new Date((s.start_time||"").replace(/\u202f|\u2009/g," "));
       const limit=DURATION_LIMITS[s.subject]||1800;
       const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
-        const card=document.createElement("div");
-        card.className="card text-center shadow-sm seat-card";
-        card.innerHTML=`
-          <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="50" height="50" alt="photo">
-          <h6 class="fw-semibold mb-0" style="font-size:0.85em;">${s.name}</h6>
-          <small class="text-muted" style="font-size:0.75em;">${s.subject} – ${seatLabel}</small>
-          <div class="timer fw-bold" style="font-size:0.95em; margin-top:0.4rem;">--:--:--</div>
-          <small class="text-muted started" style="font-size:0.7em;">
-            Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>`;
+      const badges = [];
+      if (s.paper_student || (s.description && /paper/i.test(s.description))) {
+        badges.push('<span class="badge bg-secondary" title="Paper student">P</span>');
+      }
+      if (s.book_loaned) {
+        badges.push('<span class="badge bg-warning text-dark" title="Has loaned book">B</span>');
+      }
+      const badgeRow = badges.length ? `<div class="mt-1 d-flex justify-content-center gap-1">${badges.join('')}</div>` : '';
+
+      const card=document.createElement("div");
+      card.className="card text-center shadow-sm seat-card";
+      card.innerHTML=`
+        <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="50" height="50" alt="photo">
+        <h6 class="fw-semibold mb-0" style="font-size:0.85em;">${s.name}</h6>
+        ${badgeRow}
+        <div class="timer fw-bold text-success" style="font-size:0.95em; margin-top:0.3rem;">--:--:--</div>
+        <small class="text-muted" style="font-size:0.75em;">${s.subject} – ${seatLabel}</small>
+        <small class="text-muted started" style="font-size:0.7em;">
+          Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>`;
       card.onclick=async()=>{
         if(confirm("Stop session for "+s.name+"?")){
           await fetch(`/api/students/stop/${s.id}`,{method:'POST'});
