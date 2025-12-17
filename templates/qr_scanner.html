@@ -112,6 +112,7 @@ let scanBuffer = '';
 let finalizeTimer = null;
 let displayTimer = null;
 let resetTimer = null;
+let isProcessing = false; // Guard to prevent duplicate finalizeScan calls
 
 const IDLE_MS = 180; // idle gap that indicates scan end
 
@@ -223,6 +224,13 @@ function deduplicateRepeatingDigits(numStr){
 
 async function finalizeScan(){
   try {
+    // Guard against duplicate processing
+    if (isProcessing) {
+      scannerLogDebug('finalizeScan already processing, skipping duplicate call');
+      return;
+    }
+    isProcessing = true;
+    
     scannerLogDebug('finalizeScan called');
     const raw = scanBuffer;
     const data = normalizePayload(raw);
@@ -405,12 +413,14 @@ async function finalizeScan(){
   
   // Clear buffer immediately after finalize to prevent duplicate processing
   scanBuffer = '';
+  isProcessing = false; // Mark as done processing
   scannerLogDebug('finalizeScan complete - buffer cleared');
   
   } catch(err) {
     scannerLogDebug(`finalizeScan ERROR: ${err.message} | stack: ${err.stack}`);
     console.error('finalizeScan error:', err);
     scanBuffer = '';
+    isProcessing = false; // Ensure flag is reset on error
   }
 }
 
