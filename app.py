@@ -152,12 +152,12 @@ def _clear_state_on_startup():
     This guarantees the Active Class column starts empty after a restart.
     """
     try:
-        # Strongest cleanup: delete all session records to guarantee empty active view
+        # Close any open DB sessions by setting end_time & duration (preserve history)
         try:
-            deleted = timer_manager.delete_all_sessions()
-            print(f'[startup] deleted all sessions: {deleted}')
+            closed = timer_manager.close_all_open_db_sessions()
+            print(f'[startup] closed open DB sessions: {closed}')
         except Exception as e:
-            print('[startup] delete_all_sessions failed:', e)
+            print('[startup] close_all_open_db_sessions failed:', e)
 
         # Clear dashboard helper cache
         try:

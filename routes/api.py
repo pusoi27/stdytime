@@ -9,7 +9,7 @@ import sqlite3
 # Global caches for performance (UI helpers)
 active_students_cache = {}  # sid -> student dict (only active)
 checked_out_cache = {}
-selected_assistants_cache = []  # List of dicts for assistants on duty
+selected_assistants_cache = []  # List of dicts for assistants on duty (legacy; DB is source of truth)
 
 def register_api_routes(app):
     """Register API/AJAX routes."""
@@ -66,6 +66,8 @@ def register_api_routes(app):
                 "phone": s[5],
                 "photo": s[6] if len(s) > 6 else None,
                 "active": s[7] if len(s) > 7 else 0,
+                "book_loaned": s[8] if len(s) > 8 else 0,
+                "paper_ws": s[9] if len(s) > 9 else 0,
                 "status": status,
                 "start_time": start_time,
                 "total_seconds": total_seconds,
@@ -128,6 +130,8 @@ def register_api_routes(app):
                 "subject": s[2],
                 "level": s[3],
                 "photo": s[6] if len(s) > 6 else None,
+                "book_loaned": s[8] if len(s) > 8 else 0,
+                "paper_ws": s[9] if len(s) > 9 else 0,
                 "start_time": start,
             }
             active_students_cache[sid] = student_dict
@@ -225,58 +229,71 @@ def register_api_routes(app):
 
     @app.route("/api/assistants/list")
     def api_assistants_list():
-        """Return all available assistants with duty status and start time for payroll."""
+        """Return all assistants with on-duty status and start time.
+        DB is the source of truth: an "open" assistant_sessions row (end_time NULL) => on duty.
+        """
         assistants = assistant_manager.get_all_assistants()
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            open_rows = c.execute(
+                "SELECT assistant_id, start_time FROM assistant_sessions WHERE end_time IS NULL"
+            ).fetchall()
+        open_map = {aid: start for (aid, start) in open_rows}
         result = []
         for a in assistants:
-            duty_info = next((x for x in selected_assistants_cache if x["id"] == a[0]), None)
+            aid = a[0]
             result.append(
                 dict(
-                    id=a[0],
+                    id=aid,
                     name=a[1],
                     role=a[2] if len(a) > 2 else "",
                     email=a[3] if len(a) > 3 else "",
                     phone=a[4] if len(a) > 4 else "",
-                    on_duty=duty_info is not None,
-                    start_time=duty_info["start_time"] if duty_info else None,
+                    on_duty=aid in open_map,
+                    start_time=open_map.get(aid),
                 )
             )
         return jsonify(result)
 
     @app.route("/api/assistants/select/<int:aid>", methods=["POST"])
     def api_assistants_select(aid):
-        """Toggle assistant on/off duty with payroll time tracking."""
+        """Toggle assistant on/off duty with payroll time tracking.
+        Uses DB open-row semantics so checkout works reliably (even after restarts).
+        """
         assistant = assistant_manager.get_assistant(aid)
         if not assistant:
             return jsonify({"error": "Assistant not found"}), 404
-        
-        # Check if already on duty
-        duty_info = next((a for a in selected_assistants_cache if a["id"] == aid), None)
-        
-        if duty_info:
-            # End duty: calculate duration and persist to DB
-            start = datetime.fromisoformat(duty_info.get("start_time")) if duty_info.get("start_time") else None
-            end = datetime.now()
-            duration = int((end - start).total_seconds()) if start else 0
-            # persist to assistant_sessions table
-            with sqlite3.connect(DB_PATH) as conn:
-                cur = conn.cursor()
+
+        now = datetime.now()
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            open_row = cur.execute(
+                "SELECT id, start_time FROM assistant_sessions WHERE assistant_id=? AND end_time IS NULL ORDER BY id DESC LIMIT 1",
+                (aid,)
+            ).fetchone()
+
+            if open_row:
+                sess_id, start_iso = open_row
+                try:
+                    start_dt = datetime.fromisoformat(start_iso) if start_iso else None
+                except Exception:
+                    start_dt = None
+                duration = int((now - start_dt).total_seconds()) if start_dt else 0
                 cur.execute(
-                    "INSERT INTO assistant_sessions (assistant_id, start_time, end_time, duration) VALUES (?,?,?,?)",
-                    (aid, start.isoformat() if start else None, end.isoformat(), duration),
+                    "UPDATE assistant_sessions SET end_time=?, duration=? WHERE id=?",
+                    (now.isoformat(), duration, sess_id)
                 )
                 conn.commit()
-            # remove from cache
-            selected_assistants_cache[:] = [a for a in selected_assistants_cache if a["id"] != aid]
-            return jsonify({"success": True, "on_duty": False, "duration": duration})
-        else:
-            # Start duty: add to cache with start time
-            selected_assistants_cache.append(
-                dict(
-                    id=assistant[0],
-                    name=assistant[1],
-                    role=assistant[2] if len(assistant) > 2 else "",
-                    start_time=datetime.now().isoformat(),
+                # Keep legacy cache in sync (best-effort)
+                selected_assistants_cache[:] = [a for a in selected_assistants_cache if a.get("id") != aid]
+                return jsonify({"success": True, "on_duty": False, "duration": duration})
+            else:
+                # Start new open session
+                cur.execute(
+                    "INSERT INTO assistant_sessions (assistant_id, start_time, end_time, duration) VALUES (?,?,NULL,NULL)",
+                    (aid, now.isoformat())
                 )
-            )
-            return jsonify({"success": True, "on_duty": True})
+                conn.commit()
+                # Keep legacy cache in sync (best-effort)
+                selected_assistants_cache.append(dict(id=aid, name=assistant[1], role=assistant[2] if len(assistant) > 2 else "", start_time=now.isoformat()))
+                return jsonify({"success": True, "on_duty": True})

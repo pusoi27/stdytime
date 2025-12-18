@@ -7,9 +7,8 @@ from flask import render_template, request, send_file, redirect, url_for
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
-from modules import reports
-
-DB_PATH = "kumoclock/data.db"
+from modules import reports, student_manager
+from modules.database import DB_PATH
 
 def register_reports_routes(app):
     """Register reports routes (assistant hours and attendance)."""
@@ -77,6 +76,73 @@ def register_reports_routes(app):
     # ================================================================
     # Attendance Reports
     # ================================================================
+
+    @app.route('/reports/class-attendance')
+    def class_attendance_page():
+        """HTML page: Class attendance with date pickers and Print to PDF."""
+        # Defaults: last 7 days inclusive
+        today = datetime.today().date()
+        default_start = (today - timedelta(days=7)).isoformat()
+        default_end = today.isoformat()
+
+        start_param = request.args.get('start', default_start)
+        end_param = request.args.get('end', default_end)
+        error = None
+        by_day = {}
+
+        # Validate inputs
+        try:
+            start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+        except ValueError:
+            error = "Invalid date format; expected YYYY-MM-DD"
+            start_date = datetime.strptime(default_start, '%Y-%m-%d').date()
+            end_date = datetime.strptime(default_end, '%Y-%m-%d').date()
+
+        if end_date < start_date:
+            error = "End date must be on or after start date"
+
+        # Enforce last 30 calendar days
+        earliest = today - timedelta(days=30)
+        if start_date < earliest or end_date > today or (end_date - start_date).days > 30:
+            error = "Dates must be within the last 30 calendar days."
+
+        if not error:
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                query = (
+                    """
+                    SELECT DATE(sess.start_time) as day, s.name
+                    FROM sessions AS sess
+                    JOIN students AS s ON s.id = sess.student_id
+                    WHERE s.active = 1
+                      AND DATE(sess.start_time) >= ? AND DATE(sess.start_time) <= ?
+                    ORDER BY day, s.name
+                    """
+                )
+                c.execute(query, (start_date.isoformat(), end_date.isoformat()))
+                rows = c.fetchall()
+
+            for day, name in rows:
+                by_day.setdefault(day, set()).add(name)
+
+        # Convert sets to sorted lists for rendering
+        by_day_list = [
+            {
+                'day': day,
+                'names': sorted(list(names)),
+                'count': len(names),
+            }
+            for day, names in sorted(by_day.items())
+        ]
+
+        return render_template(
+            'reports_class_attendance.html',
+            start=start_date.isoformat(),
+            end=end_date.isoformat(),
+            error=error,
+            by_day=by_day_list,
+        )
 
     @app.route('/reports/class-attendance/pdf')
     def class_attendance_pdf():
@@ -178,6 +244,77 @@ def register_reports_routes(app):
         buffer.seek(0)
         filename = f"class_attendance_{start_date}_to_{end_date}.pdf"
         return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+    @app.route('/reports/student-attendance')
+    def student_attendance_page():
+        """HTML page: Student attendance with student picker, date range, and report table."""
+        students = student_manager.get_all_students()
+        
+        # Defaults: last 7 days and first student (or none if no students)
+        today = datetime.today().date()
+        default_start = (today - timedelta(days=7)).isoformat()
+        default_end = today.isoformat()
+        
+        sid = request.args.get('sid', type=int)
+        start_param = request.args.get('start', default_start)
+        end_param = request.args.get('end', default_end)
+        error = None
+        sessions = []
+        student_name = None
+        
+        # Validate inputs
+        try:
+            start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+        except ValueError:
+            error = "Invalid date format; expected YYYY-MM-DD"
+            start_date = datetime.strptime(default_start, '%Y-%m-%d').date()
+            end_date = datetime.strptime(default_end, '%Y-%m-%d').date()
+        
+        if end_date < start_date:
+            error = "End date must be on or after start date"
+        
+        # Enforce last 30 calendar days
+        earliest = today - timedelta(days=30)
+        if start_date < earliest or end_date > today or (end_date - start_date).days > 30:
+            error = "Dates must be within the last 30 calendar days."
+        
+        # Fetch data if sid is provided
+        if sid and not error:
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                srow = c.execute("SELECT name FROM students WHERE id=?", (sid,)).fetchone()
+                if srow:
+                    student_name = srow[0]
+                    q = """
+                        SELECT DATE(start_time) as day, duration
+                        FROM sessions
+                        WHERE student_id = ?
+                          AND DATE(start_time) >= ? AND DATE(start_time) <= ?
+                        ORDER BY start_time ASC
+                    """
+                    c.execute(q, (sid, start_date.isoformat(), end_date.isoformat()))
+                    sessions = c.fetchall()
+        
+        # Format sessions for display
+        sessions_list = [
+            {
+                'date': day,
+                'duration': f"{int(duration // 3600):02d}:{int((duration % 3600) // 60):02d}" if duration else "00:00"
+            }
+            for day, duration in sessions
+        ]
+        
+        return render_template(
+            'reports_student_attendance.html',
+            students=students,
+            sid=sid,
+            start=start_date.isoformat(),
+            end=end_date.isoformat(),
+            student_name=student_name,
+            error=error,
+            sessions=sessions_list,
+        )
 
     @app.route('/reports/student-attendance/pdf')
     def student_attendance_pdf():

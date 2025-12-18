@@ -1,9 +1,8 @@
-Name:Agustin A.
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4" style="max-width:600px;">
   <h4>{{ action }} Student</h4>
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     <div class="mb-2">
       <label class="form-label">Name</label>
       <input name="name" class="form-control" value="{{ student[1] if student else '' }}" required>
@@ -20,9 +19,21 @@ Name:Agustin A.
       <label class="form-label">Email</label>
       <input name="email" type="email" class="form-control" value="{{ student[4] if student else '' }}">
     </div>
-    <div class="mb-3">
+    <div class="mb-2">
       <label class="form-label">Phone</label>
       <input name="phone" class="form-control" value="{{ student[5] if student else '' }}">
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Photo</label>
+      <input name="photo" type="file" class="form-control" accept="image/*">
+    </div>
+    <div class="mb-2 form-check">
+      <input name="book_loaned" type="checkbox" class="form-check-input" id="bookLoanedCheck" {{ 'checked' if (student and student[8]) else '' }}>
+      <label class="form-check-label" for="bookLoanedCheck">Has Loaned Book</label>
+    </div>
+    <div class="mb-3 form-check">
+      <input name="paper_ws" type="checkbox" class="form-check-input" id="paperWSCheck" {{ 'checked' if (student and student[9]) else '' }}>
+      <label class="form-check-label" for="paperWSCheck">Paper Worksheets</label>
     </div>
     <button type="submit" class="btn btn-primary">{{ action }}</button>
     <a href="{{ url_for('students_list') }}" class="btn btn-secondary">Cancel</a>

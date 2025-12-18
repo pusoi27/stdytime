@@ -1,6 +1,6 @@
 <script>
 const SEAT_LIMIT = 20;
-const SEAT_LIMIT_FULLSCREEN = 40; // More seats when maximized
+const SEAT_LIMIT_FULLSCREEN = 20; // Keep same seat count in fullscreen
 const DURATION_LIMITS = { "S1": 30*60, "S2": 60*60 };
 const IDLE_TIMEOUT_MS = 60000; // 1 minute
 const isActiveClassWindow = true; // only dashboard should handle class check-in/out
@@ -48,7 +48,19 @@ function enterFullscreenMode(){
     col2.querySelector('.card').style.height = '100vh';
   }
   
-  // Rebuild grid with more seats
+  // Request full screen API to cover browser menus
+  const elem = document.documentElement;
+  if(elem.requestFullscreen){
+    elem.requestFullscreen().catch(err => console.warn('Fullscreen request failed:', err));
+  } else if(elem.webkitRequestFullscreen){
+    elem.webkitRequestFullscreen();
+  } else if(elem.mozRequestFullScreen){
+    elem.mozRequestFullScreen();
+  } else if(elem.msRequestFullscreen){
+    elem.msRequestFullscreen();
+  }
+  
+  // Rebuild grid
   fetchDashboardData();
 }
 
@@ -69,6 +81,17 @@ function exitFullscreenMode(){
       col.style.display = '';
     }
   });
+  
+  // Exit full screen API
+  if(document.fullscreenElement){
+    document.exitFullscreen().catch(err => console.warn('Exit fullscreen failed:', err));
+  } else if(document.webkitFullscreenElement){
+    document.webkitExitFullscreen();
+  } else if(document.mozFullScreenElement){
+    document.mozCancelFullScreen();
+  } else if(document.msFullscreenElement){
+    document.msExitFullscreen();
+  }
   
   // Rebuild grid with normal seat count
   fetchDashboardData();
@@ -245,25 +268,34 @@ function buildSeatGrid(activeSessions){
       const start=new Date((s.start_time||"").replace(/\u202f|\u2009/g," "));
       const limit=DURATION_LIMITS[s.subject]||1800;
       const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
-      const badges = [];
-      if (s.paper_student || (s.description && /paper/i.test(s.description))) {
-        badges.push('<span class="badge bg-secondary" title="Paper student">P</span>');
-      }
+      const badges = [s.subject];
       if (s.book_loaned) {
-        badges.push('<span class="badge bg-warning text-dark" title="Has loaned book">B</span>');
+        badges.push('B');
       }
-      const badgeRow = badges.length ? `<div class="mt-1 d-flex justify-content-center gap-1">${badges.join('')}</div>` : '';
+      if (s.paper_ws) {
+        badges.push('P');
+      }
+      const badgeText = badges.join(', ');
+      const fontSize = isFullscreenMode ? '34px' : '28px';
 
       const card=document.createElement("div");
-      card.className="card text-center shadow-sm seat-card";
+      card.className="card shadow-sm seat-card";
+      card.style.minHeight="155px";
+      card.style.display="flex";
+      card.style.flexDirection="column";
       card.innerHTML=`
-        <img src="${photo}" data-sid="${s.id}" class="rounded-circle mb-1" width="50" height="50" alt="photo">
-        <h6 class="fw-semibold mb-0" style="font-size:0.85em;">${s.name}</h6>
-        ${badgeRow}
-        <div class="timer fw-bold text-success" style="font-size:0.95em; margin-top:0.3rem;">--:--:--</div>
-        <small class="text-muted" style="font-size:0.75em;">${s.subject} – ${seatLabel}</small>
-        <small class="text-muted started" style="font-size:0.7em;">
-          Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>`;
+        <div class="d-flex align-items-start p-2">
+          <img src="${photo}" data-sid="${s.id}" class="rounded-circle me-2" width="60" height="60" alt="photo">
+          <div class="flex-grow-1">
+            <div class="fw-semibold" style="font-size:${fontSize}; line-height:1.2;">${s.name}</div>
+          </div>
+        </div>
+        <div class="flex-grow-1 d-flex align-items-center justify-content-center">
+          <div class="timer fw-bold text-success" style="font-size:${fontSize}; line-height:1.2;">--:--:--</div>
+        </div>
+        <div class="text-center text-muted" style="font-size:0.7em; padding:0.25rem 0.5rem; border-top:1px solid #e9ecef;">
+          Started: ${start.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+        </div>`;
       card.onclick=async()=>{
         if(confirm("Stop session for "+s.name+"?")){
           await fetch(`/api/students/stop/${s.id}`,{method:'POST'});
@@ -461,6 +493,7 @@ resetIdleTimer();
   const KEEP_FOCUS_MS = 2000; // refocus interval to keep page ready
   let focusTimer = null;
   let listenersAttached = false;
+  let debugPanelVisible = localStorage.getItem('dashDebugPanelVisible') === 'true';
 
   // Debug panel to collect logs visible on the page
   function ensureDebugPanel(){
@@ -477,10 +510,12 @@ resetIdleTimer();
     wrap.style.border='1px solid #ced4da';
     wrap.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)';
     wrap.style.borderRadius='6px';
+    wrap.style.display=debugPanelVisible ? 'block' : 'none';
     wrap.innerHTML = `
       <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:#0d6efd; color:#fff; border-radius:6px 6px 0 0;">
         <strong style="font-size:0.95em;">Scanner Debug Log</strong>
         <div>
+          <button id="dashDebugToggle" class="btn btn-sm btn-light py-0 px-1">Hide</button>
           <button id="dashDebugCopy" class="btn btn-sm btn-light py-0 px-1">Copy</button>
           <button id="dashDebugClear" class="btn btn-sm btn-outline-light py-0 px-1">Clear</button>
         </div>
@@ -488,6 +523,13 @@ resetIdleTimer();
       <textarea id="dashDebugArea" readonly tabindex="-1" style="width:100%; height:180px; font-size:12px; font-family:monospace; border:0; padding:6px; resize:none; outline:none; user-select:text;"></textarea>
     `;
     document.body.appendChild(wrap);
+    document.getElementById('dashDebugToggle').onclick = () => {
+      debugPanelVisible = !debugPanelVisible;
+      localStorage.setItem('dashDebugPanelVisible', debugPanelVisible);
+      wrap.style.display = debugPanelVisible ? 'block' : 'none';
+      const btn = document.getElementById('dashDebugToggle');
+      btn.textContent = debugPanelVisible ? 'Hide' : 'Show';
+    };
     document.getElementById('dashDebugCopy').onclick = () => {
       const ta = document.getElementById('dashDebugArea');
       ta.select();
@@ -601,71 +643,108 @@ resetIdleTimer();
     if(!data) return;
     logDebug(`RAW=${JSON.stringify(raw)}`);
 
-    // Try to extract student ID from a variety of formats produced by scanners
-    let sid = null;
+    // Parse type and id (supports ID and ASST)
+    let type = null;
+    let ident = null;
 
-    // Tier 1: direct clean pattern, e.g., "ID:57"
+    // Tier 1: direct clean pattern, e.g., "ID:57" or "ASST:3"
     let m = data.match(/^(ID|ASST|ASSISTANT)\s*[:;=]?\s*(\d+)$/i);
     if(m){
-      let idStr = m[2];
-      sid = parseInt(deduplicateRepeatingDigits(idStr),10);
-      logDebug(`DIRECT match -> ${sid}`);
+      type = (m[1].toUpperCase()==='ASSISTANT') ? 'ASST' : m[1].toUpperCase();
+      ident = parseInt(deduplicateRepeatingDigits(m[2]),10);
+      logDebug(`DIRECT match -> type=${type} id=${ident}`);
     }
 
-    // Tier 2: flexible pattern with noise, e.g., "IID0:+5577" (grab digits after token)
-    if(sid == null){
+    // Tier 2: flexible pattern with noise
+    if(ident == null){
       m = data.match(/(ID|ASST|ASSISTANT)[^\d]*[:+;=]*([0-9]+)/i);
       if(m){
+        type = (m[1].toUpperCase()==='ASSISTANT') ? 'ASST' : m[1].toUpperCase();
         let idStr = m[2];
         if(idStr.length < 2){
           const later = data.match(/(\d{2,6})(?!.*\d)/);
           if(later) idStr = later[1];
         }
-        sid = parseInt(deduplicateRepeatingDigits(idStr),10);
-        logDebug(`FLEX match -> ${sid} from ${idStr}`);
+        ident = parseInt(deduplicateRepeatingDigits(idStr),10);
+        logDebug(`FLEX match -> type=${type} id=${ident} from ${idStr}`);
       }
     }
 
-    // Tier 3: search anywhere for the last digits block, e.g., trailing "77jj" -> 77
-    if(sid == null){
+    // Tier 3: last digits anywhere (fallback)
+    if(ident == null){
       m = data.match(/(\d{2,6})(?!.*\d)/);
-      if(m){
-        sid = parseInt(deduplicateRepeatingDigits(m[1]),10);
-        logDebug(`LAST-DIGITS match -> ${sid}`);
-      }
+      if(m){ ident = parseInt(deduplicateRepeatingDigits(m[1]),10); type = type || 'ID'; logDebug(`LAST-DIGITS -> type=${type} id=${ident}`); }
     }
 
-    // Tier 4: all digits only
-    if(sid == null){
+    // Tier 4: all digits only -> assume student ID
+    if(ident == null){
       const onlyDigits = data.match(/^(\d{1,6})$/);
-      if(onlyDigits){ sid = parseInt(deduplicateRepeatingDigits(onlyDigits[1]),10); logDebug(`ONLY-DIGITS -> ${sid}`); }
+      if(onlyDigits){ ident = parseInt(deduplicateRepeatingDigits(onlyDigits[1]),10); type = type || 'ID'; logDebug(`ONLY-DIGITS -> type=${type} id=${ident}`); }
     }
 
-    if(!Number.isFinite(sid)) return;
+    if(!Number.isFinite(ident)) return;
 
-    // Toggle the session and refresh the dashboard
+    // Parse optional fields for display name (e.g., Name:John Doe)
+    const fields = {};
+    data.split('\n').map(l=>l.trim()).filter(Boolean).forEach(line => {
+      const mm = line.match(/^([^:;=]+)[:;=](.*)$/);
+      if(mm){ fields[mm[1].trim().toUpperCase()] = mm[2].trim(); }
+    });
+
+    async function resolveAssistantName(aid){
+      if(fields.NAME) return fields.NAME;
+      try{
+        const res = await fetch('/api/assistants/list', {cache:'no-store'});
+        const list = await res.json();
+        const a = list.find(x=>x.id===aid);
+        return a ? a.name : `Assistant ${aid}`;
+      }catch{ return `Assistant ${aid}`; }
+    }
+
+    if(type === 'ASST'){
+      // Toggle assistant on/off duty
+      try{
+        const res = await fetch(`/api/assistants/select/${ident}`, {method:'POST'});
+        const j = await res.json().catch(()=>({}));
+        const name = await resolveAssistantName(ident);
+        if(!res.ok || j.error){
+          showQuickToast(`${name}: ${j.error || 'Toggle failed'}`, true);
+          logDebug(`ASST FAIL id=${ident} status=${res.status} body=${JSON.stringify(j)}`);
+        } else {
+          const action = j.on_duty ? 'On Duty' : 'Off Duty';
+          showQuickToast(`${name} — ${action}`);
+          logDebug(`ASST OK id=${ident} action=${action}`);
+        }
+        fetchDashboardData();
+      }catch(err){
+        console.error('[dashboard] assistant toggle error', err);
+        showQuickToast('Error toggling assistant '+ident, true);
+        logDebug(`ASST ERROR id=${ident} msg=${err.message}`);
+      }
+      return; // done
+    }
+
+    // Default: treat as student ID
     try{
       const res = await fetch('/api/sessions/toggle',{
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ student_id: sid })
+        body: JSON.stringify({ student_id: ident })
       });
       const j = await res.json().catch(()=>({}));
-      // Show a quick toast-like feedback
       if(!res.ok){
         console.warn('[dashboard][scan] toggle failed', j);
-        showQuickToast(`ID ${sid}: ${j.error || 'Toggle failed'}`, true);
-        logDebug(`TOGGLE FAIL id=${sid} status=${res.status} body=${JSON.stringify(j)}`);
+        showQuickToast(`ID ${ident}: ${j.error || 'Toggle failed'}`, true);
+        logDebug(`TOGGLE FAIL id=${ident} status=${res.status} body=${JSON.stringify(j)}`);
       } else {
         const action = (j && j.action) ? (j.action==='started'?'Started':'Checked Out') : 'Updated';
-        showQuickToast(`${j.name||('Student '+sid)} — ${action}`);
-        logDebug(`TOGGLE OK id=${sid} action=${action}`);
+        showQuickToast(`${j.name||('Student '+ident)} — ${action}`);
+        logDebug(`TOGGLE OK id=${ident} action=${action}`);
       }
-      // refresh dashboard columns
       fetchDashboardData();
     }catch(err){
       console.error('[dashboard] toggle error', err);
-      showQuickToast('Error toggling session for ID '+sid, true);
-      logDebug(`ERROR id=${sid} msg=${err.message}`);
+      showQuickToast('Error toggling session for ID '+ident, true);
+      logDebug(`ERROR id=${ident} msg=${err.message}`);
     }
 
     // ensure buffers are clear and ready for next scan immediately

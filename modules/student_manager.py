@@ -20,13 +20,15 @@ def get_all_students():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
-            c.execute("SELECT id, name, subject, level, email, phone, photo, active FROM students ORDER BY name")
+            # Include flags for loaned book and paper worksheet
+            c.execute("SELECT id, name, subject, level, email, phone, photo, active, book_loaned, paper_ws FROM students ORDER BY name")
             return c.fetchall()
         else:
-            c.execute("SELECT id, name, subject, level, email, phone, active FROM students ORDER BY name")
+            # Fallback if photo column is missing (migration not yet applied)
+            c.execute("SELECT id, name, subject, level, email, phone, active, book_loaned, paper_ws FROM students ORDER BY name")
             rows = c.fetchall()
             # Return a consistent tuple shape where index 6 is `photo` (None if missing)
-            return [(r[0], r[1], r[2], r[3], r[4], r[5], None) for r in rows]
+            return [(r[0], r[1], r[2], r[3], r[4], r[5], None, r[6], r[7], r[8]) for r in rows]
 
 
 def get_student(student_id):
@@ -34,37 +36,38 @@ def get_student(student_id):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
-            row = c.execute("SELECT id,name,subject,level,email,phone,photo,active FROM students WHERE id=?", (student_id,)).fetchone()
+            row = c.execute("SELECT id,name,subject,level,email,phone,photo,active,book_loaned,paper_ws FROM students WHERE id=?", (student_id,)).fetchone()
             return row
         else:
-            row = c.execute("SELECT id,name,subject,level,email,phone,active FROM students WHERE id=?", (student_id,)).fetchone()
+            row = c.execute("SELECT id,name,subject,level,email,phone,active,book_loaned,paper_ws FROM students WHERE id=?", (student_id,)).fetchone()
             if not row:
                 return None
-            return (row[0], row[1], row[2], row[3], row[4], row[5], None)
+            # Insert None for photo to keep tuple shape
+            return (row[0], row[1], row[2], row[3], row[4], row[5], None, row[6], row[7], row[8])
 
 
-def add_student(name, subject, level, email, phone, photo=None):
+def add_student(name, subject, level, email, phone, photo=None, book_loaned=0, paper_ws=0):
     has_photo = _table_has_column("students", "photo")
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
             c.execute("""INSERT INTO students
-                (name,subject,level,email,phone,photo,active)
-                VALUES (?,?,?,?,?,?,1)""",
-                (name, subject, level, email, phone, photo))
+                (name,subject,level,email,phone,photo,active,book_loaned,paper_ws)
+                VALUES (?,?,?,?,?,?,1,?,?)""",
+                (name, subject, level, email, phone, photo, int(bool(book_loaned)), int(bool(paper_ws))))
         else:
             c.execute("""INSERT INTO students
-                (name,subject,level,email,phone,active)
-                VALUES (?,?,?,?,?,1)""",
-                (name, subject, level, email, phone))
+                (name,subject,level,email,phone,active,book_loaned,paper_ws)
+                VALUES (?,?,?,?,?,1,?,?)""",
+                (name, subject, level, email, phone, int(bool(book_loaned)), int(bool(paper_ws))))
         conn.commit()
 
 
-def update_student(sid, name, subject, level, email, phone):
+def update_student(sid, name, subject, level, email, phone, book_loaned=0, paper_ws=0):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""UPDATE students SET name=?,subject=?,level=?,email=?,phone=? WHERE id=?""",
-                  (name,subject,level,email,phone,sid))
+        c.execute("""UPDATE students SET name=?,subject=?,level=?,email=?,phone=?,book_loaned=?,paper_ws=? WHERE id=?""",
+                  (name,subject,level,email,phone,int(bool(book_loaned)),int(bool(paper_ws)),sid))
         conn.commit()
 
 
@@ -98,7 +101,7 @@ def import_csv(file_path):
 
 def export_csv(path):
     data=get_all_students()
-    headers=["ID","Name","Subject","Level","Email","Phone","Active"]
+    headers=["ID","Name","Subject","Level","Email","Phone","Photo","Active","BookLoaned","PaperWS"]
     with open(path,"w",newline="",encoding="utf-8") as f:
         writer=csv.writer(f)
         writer.writerow(headers)

@@ -6,7 +6,7 @@
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
-    <span class="text-white-50 small">Version 4.4.3</span>
+    <span class="text-white-50 small">Version 04.05.11</span>
 
     <!-- Toggler -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -26,8 +26,6 @@
           <ul class="dropdown-menu">
             <li><a class="dropdown-item" href="{{ url_for('students_add') }}">Add Student</a></li>
             <li><a class="dropdown-item" href="{{ url_for('students_list') }}">View / Edit / Delete</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('students_list') }}">CSV Import / Export</a></li>
           </ul>
         </li>
 
@@ -59,8 +57,8 @@
       <a class="dropdown-item" href="#" role="button">Reports</a>
       <ul class="dropdown-menu">
         <li><a class="dropdown-item" href="#" onclick="openAssistantReportDialog();return false;">Payroll Staff Hours</a></li>
-        <li><a class="dropdown-item" href="#" onclick="openClassAttendanceDialog();return false;">Class Attendance</a></li>
-        <li><a class="dropdown-item" href="#" onclick="openStudentAttendanceDialog();return false;">Student Attendance</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('class_attendance_page') }}">Class Attendance</a></li>
+        <li><a class="dropdown-item" href="{{ url_for('student_attendance_page') }}">Student Attendance</a></li>
         <li><a class="dropdown-item" href="#">Loaned Books</a></li>
       </ul>
     </li>
@@ -76,9 +74,7 @@
             <li><a class="dropdown-item" href="{{ url_for('qr_scanner') }}" onclick="event.stopPropagation();">Scanner</a></li>
           </ul>
         </li>
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item" href="#" onclick="resetActiveClass();return false;">Reset Active Class</a></li>
-        <li><a class="dropdown-item" href="#" onclick="resetAttendanceToday();return false;">Reset Attendance (today)</a></li>
+        
       </ul>
     </li>
   </ul>
@@ -191,41 +187,7 @@ function generateAllBookQRs(){
     });
 }
 
-// Reset active class (clears column 2)
-function resetActiveClass(){
-  fetch('/api/sessions/clear', { method: 'POST' })
-    .then(async r => {
-      if(!r.ok){
-        const text = await r.text();
-        throw new Error(text || `HTTP ${r.status}`);
-      }
-      return r.json();
-    })
-    .then(data => {
-      if(data.error){ throw new Error(data.error); }
-      alert(`Active class cleared. Stopped: ${data.stopped?.length || 0}`);
-      if(typeof fetchDashboardData === 'function'){ fetchDashboardData(); }
-    })
-    .catch(err => {
-      console.error('Error clearing active class', err);
-      alert('Error clearing active class: ' + err);
-    });
-}
-
-// Reset today's attendance (class & student attendance persistence)
-function resetAttendanceToday(){
-  if(!confirm('Reset today\'s attendance data? This will remove today\'s session records.')) return;
-  fetch('/api/attendance/reset_today', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      alert(`Attendance reset for ${data.date}. Deleted rows: ${data.deleted || 0}`);
-      if(typeof fetchDashboardData === 'function'){ fetchDashboardData(); }
-    })
-    .catch(err => {
-      console.error('Error resetting attendance', err);
-      alert('Error resetting attendance: ' + err);
-    });
-}
+// (Removed reset actions from Instructor menu per request)
 
 // Handle nested dropdown submenus for Bootstrap 5
 document.querySelectorAll('.dropdown-submenu > a').forEach(link => {
@@ -335,35 +297,6 @@ document.querySelectorAll('.dropdown').forEach(dropdown => {
 </div>
 
 <!-- Student Attendance Report Modal -->
-<div class="modal fade" id="studentAttendanceModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-sm modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Student Attendance Report</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="mb-2">
-          <label class="form-label small">Student</label>
-          <select id="studentAttendanceSelect" class="form-select form-select-sm"></select>
-        </div>
-        <div class="mb-2">
-          <label class="form-label small">Start date</label>
-          <input id="studentAttendanceStart" type="date" class="form-control form-control-sm">
-        </div>
-        <div class="mb-2">
-          <label class="form-label small">End date</label>
-          <input id="studentAttendanceEnd" type="date" class="form-control form-control-sm">
-        </div>
-        <p class="small text-muted">Only the last 30 calendar days allowed</p>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" onclick="downloadStudentAttendancePDF()">Download PDF</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <script>
 function openAssistantReportDialog(){
@@ -391,81 +324,7 @@ function downloadAssistantCSV(){
   window.location = url;
 }
 
-function openClassAttendanceDialog(){
-  const startInput = document.getElementById('classAttendanceStart');
-  const endInput = document.getElementById('classAttendanceEnd');
-  const today = new Date();
-  const endStr = today.toISOString().slice(0,10);
-  const past = new Date(); past.setDate(today.getDate()-7);
-  const startStr = past.toISOString().slice(0,10);
-  if(startInput) startInput.value = startStr;
-  if(endInput) endInput.value = endStr;
-  const modalEl = document.getElementById('classAttendanceModal');
-  const modal = new bootstrap.Modal(modalEl);
-  modal.show();
-}
-
-function downloadClassAttendancePDF(){
-  const start = document.getElementById('classAttendanceStart').value;
-  const end = document.getElementById('classAttendanceEnd').value;
-  if(!start || !end){ alert('Please select start and end dates.'); return; }
-  if(start > end){ alert('Start date must be before or equal to end date.'); return; }
-  // Enforce last 30 calendar days relative to today
-  const today = new Date().toISOString().slice(0,10);
-  const past30 = new Date(); past30.setDate(new Date().getDate()-30);
-  const earliest = past30.toISOString().slice(0,10);
-  if(start < earliest || end > today){
-    alert('Dates must be within the last 30 calendar days.');
-    return;
-  }
-  window.open(`/reports/class-attendance/pdf?start=${start}&end=${end}`, '_blank');
-}
-
-async function openStudentAttendanceDialog(){
-  // Populate student list
-  try{
-    const sel = document.getElementById('studentAttendanceSelect');
-    if(sel && sel.options.length === 0){
-      const res = await fetch('/api/students/list');
-      const data = await res.json();
-      sel.innerHTML = '<option value="">-- Choose a student --</option>';
-      data.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id; opt.textContent = s.name;
-        sel.appendChild(opt);
-      });
-    }
-  }catch(err){ console.error('Failed to load students', err); }
-
-  const startInput = document.getElementById('studentAttendanceStart');
-  const endInput = document.getElementById('studentAttendanceEnd');
-  const today = new Date();
-  const endStr = today.toISOString().slice(0,10);
-  const past = new Date(); past.setDate(today.getDate()-7);
-  const startStr = past.toISOString().slice(0,10);
-  if(startInput) startInput.value = startStr;
-  if(endInput) endInput.value = endStr;
-  const modalEl = document.getElementById('studentAttendanceModal');
-  const modal = new bootstrap.Modal(modalEl);
-  modal.show();
-}
-
-function downloadStudentAttendancePDF(){
-  const sid = document.getElementById('studentAttendanceSelect').value;
-  const start = document.getElementById('studentAttendanceStart').value;
-  const end = document.getElementById('studentAttendanceEnd').value;
-  if(!sid){ alert('Please select a student.'); return; }
-  if(!start || !end){ alert('Please select start and end dates.'); return; }
-  if(start > end){ alert('Start date must be before or equal to end date.'); return; }
-  const today = new Date().toISOString().slice(0,10);
-  const past30 = new Date(); past30.setDate(new Date().getDate()-30);
-  const earliest = past30.toISOString().slice(0,10);
-  if(start < earliest || end > today){
-    alert('Dates must be within the last 30 calendar days.');
-    return;
-  }
-  window.open(`/reports/student-attendance/pdf?sid=${sid}&start=${start}&end=${end}`, '_blank');
-}
+// Class Attendance and Student Attendance now have dedicated pages
 </script>
 
 <style>

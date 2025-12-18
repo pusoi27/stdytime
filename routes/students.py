@@ -36,6 +36,8 @@ def register_student_routes(app, student_photos_static, templates_student_photos
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
                 filename,
+                book_loaned=int(bool(request.form.get("book_loaned"))),
+                paper_ws=int(bool(request.form.get("paper_ws"))),
             )
             flash("Student added successfully.", "success")
             return redirect(url_for("students_list"))
@@ -66,6 +68,8 @@ def register_student_routes(app, student_photos_static, templates_student_photos
                 request.form.get("level", ""),
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
+                book_loaned=int(bool(request.form.get("book_loaned"))),
+                paper_ws=int(bool(request.form.get("paper_ws"))),
             )
             flash("Student updated.", "info")
             return redirect(url_for("students_list"))
