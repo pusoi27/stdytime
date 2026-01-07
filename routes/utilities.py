@@ -22,6 +22,7 @@ sys.path.insert(0, str(PARENT_DIR / 'modules'))
 
 from modules.database import get_db_connection
 from modules.utils import format_hhmm
+from modules.email_manager import get_email_manager
 
 # Temporary storage directory for report-card file data to avoid bloating session cookies
 TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
@@ -415,6 +416,157 @@ def register_utilities_routes(app):
         
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/report-card/send-email', methods=['POST'])
+    def api_send_report_email():
+        """Send student report card via email"""
+        try:
+            data = request.get_json()
+            
+            if not data:
+                return jsonify({'success': False, 'error': 'No data provided'}), 400
+            
+            student_name = data.get('student_name')
+            recipient_email = data.get('recipient_email')
+            report_data = data.get('report_data', [])
+            
+            if not student_name or not recipient_email:
+                return jsonify({'success': False, 'error': 'Student name and recipient email are required'}), 400
+            
+            if not report_data or len(report_data) == 0:
+                return jsonify({'success': False, 'error': 'No report data available'}), 400
+            
+            # Get email manager instance
+            email_manager = get_email_manager()
+            
+            # Format report data for email (combine all subjects)
+            combined_report = {
+                'student_name': student_name,
+                'subjects': []
+            }
+            
+            for record in report_data:
+                combined_report['subjects'].append({
+                    'subject': record.get('subject', 'N/A'),
+                    'highest_ws_completed': record.get('highest_ws_completed', 'N/A'),
+                    'num_ws': record.get('num_ws', 'N/A'),
+                    'study_days': record.get('study_days', 'N/A'),
+                    'cum_study_time': record.get('cum_study_time', 'N/A'),
+                    'current_subject_status': record.get('current_subject_status', 'N/A')
+                })
+            
+            # Create email subject and body
+            subject = f"Student Report Card - {student_name}"
+            
+            # Plain text body
+            body = f"""
+Dear Parent/Guardian,
+
+Please find below the report card for {student_name}.
+
+"""
+            for subj in combined_report['subjects']:
+                body += f"""
+SUBJECT: {subj['subject']}
+-------------------
+Highest Worksheet Completed: {subj['highest_ws_completed']}
+Number of Worksheets: {subj['num_ws']}
+Study Days: {subj['study_days']}
+Cumulative Study Time: {subj['cum_study_time']}
+Current Subject Status: {subj['current_subject_status']}
+
+"""
+            
+            body += """
+Best regards,
+KumoClock Academic Management System
+"""
+            
+            # HTML body
+            html_body = f"""
+<html>
+<head>
+    <style>
+        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+        .header {{ background-color: #0d6efd; color: white; padding: 20px; text-align: center; }}
+        .content {{ padding: 20px; }}
+        .subject-section {{ margin-bottom: 30px; padding: 15px; background-color: #f8f9fa; border-left: 4px solid #0d6efd; }}
+        .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+        .report-table th, .report-table td {{ 
+            border: 1px solid #ddd; padding: 12px; text-align: left; 
+        }}
+        .report-table th {{ background-color: #e9ecef; font-weight: bold; width: 50%; }}
+        .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; 
+                   color: #666; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>🎓 Student Report Card</h2>
+        <p>KumoClock Academic Management System</p>
+    </div>
+    <div class="content">
+        <p>Dear Parent/Guardian,</p>
+        <p>Please find below the report card for <strong>{student_name}</strong>.</p>
+"""
+            
+            for subj in combined_report['subjects']:
+                html_body += f"""
+        <div class="subject-section">
+            <h3 style="color: #0d6efd; margin-top: 0;">Subject: {subj['subject']}</h3>
+            <table class="report-table">
+                <tr>
+                    <th>Highest Worksheet Completed</th>
+                    <td>{subj['highest_ws_completed']}</td>
+                </tr>
+                <tr>
+                    <th>Number of Worksheets</th>
+                    <td>{subj['num_ws']}</td>
+                </tr>
+                <tr>
+                    <th>Study Days</th>
+                    <td>{subj['study_days']}</td>
+                </tr>
+                <tr>
+                    <th>Cumulative Study Time</th>
+                    <td>{subj['cum_study_time']}</td>
+                </tr>
+                <tr>
+                    <th>Current Subject Status</th>
+                    <td>{subj['current_subject_status']}</td>
+                </tr>
+            </table>
+        </div>
+"""
+            
+            html_body += """
+        <div class="footer">
+            <p>This is an automated message from KumoClock Academic Management System.</p>
+            <p>For any questions, please contact your institution.</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+            
+            # Send email
+            result = email_manager.send_email(
+                recipient_email=recipient_email,
+                subject=subject,
+                body=body,
+                html_body=html_body
+            )
+            
+            return jsonify(result)
+            
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            return jsonify({
+                'success': False,
+                'error': f'Error sending email: {str(e)}',
+                'trace': error_trace
+            }), 500
     
     
     # ==================== Student Evaluation ====================

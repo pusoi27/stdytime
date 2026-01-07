@@ -8,16 +8,7 @@ __pycache__/
 .venv/
 venv/
 ENV/
-
-# VS Code
-.vscode/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs and reports
-*.log
+.env
 assets/reports/
 
 # Generated QR codes and exports (keep if needed; adjust as desired)

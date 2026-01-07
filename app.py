@@ -12,6 +12,10 @@ from datetime import datetime
 import sqlite3
 import os
 import shutil
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from modules.database import init_db, DB_PATH
 from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports

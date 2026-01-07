@@ -26,6 +26,30 @@
         </div>
     </div>
 
+    <!-- Email Section -->
+    <div id="emailSection" class="row mb-4" style="display: none;">
+        <div class="col-md-12">
+            <div class="card shadow-sm bg-light">
+                <div class="card-body">
+                    <h6 class="mb-3"><i class="bi bi-envelope"></i> Email Report Card</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="studentSelect" class="form-label">Select Student:</label>
+                            <select id="studentSelect" class="form-select" onchange="updateSelectedStudent()">
+                                <option value="">-- Select a student --</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button class="btn btn-success btn-lg" onclick="openEmailModal()" id="emailButton" disabled>
+                                <i class="bi bi-envelope-fill"></i> Email Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Loaded Files Display -->
     <div id="loadedFilesContainer" style="display: none;">
         <div class="row mb-4">
@@ -112,6 +136,51 @@
     <!-- No Data Message -->
     <div id="noDataMessage" class="alert alert-info">
         <i class="bi bi-info-circle"></i> Please load Math and/or Reading files to view the student performance report.
+    </div>
+</div>
+
+<!-- Email Modal -->
+<div class="modal fade" id="emailModal" tabindex="-1" aria-labelledby="emailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="emailModalLabel">
+                    <i class="bi bi-envelope-fill"></i> Email Student Report Card
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Student Name:</label>
+                    <p id="modalStudentName" class="form-control-plaintext fs-5">--</p>
+                </div>
+                <div class="mb-3">
+                    <label for="recipientEmail" class="form-label fw-bold">Recipient Email Address:</label>
+                    <input type="email" class="form-control form-control-lg" id="recipientEmail" 
+                           placeholder="parent@example.com" required>
+                    <div class="form-text">Enter the email address where the report should be sent.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Report Summary:</label>
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tbody id="modalReportSummary">
+                                    <tr><td colspan="2" class="text-center text-muted">Select a student to view report</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div id="emailStatusMessage" class="alert" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="sendReportEmail()">
+                    <i class="bi bi-send-fill"></i> Send Email
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -304,18 +373,153 @@ function refreshReportTable() {
             document.getElementById('rowCount').textContent = `${rows.length} rows`;
             document.getElementById('reportTableWrapper').style.display = 'block';
             document.getElementById('noDataMessage').style.display = 'none';
+            
+            // Populate student dropdown for email feature
+            populateStudentDropdown(rows);
         })
         .catch(error => {
             console.error('Error generating report:', error);
             alert('Error generating report: ' + error.message);
         });
 }
+
+// Store current report data for email functionality
+let currentReportData = [];
+
+function populateStudentDropdown(students) {
+    currentReportData = students;
+    const select = document.getElementById('studentSelect');
+    select.innerHTML = '<option value="">-- Select a student --</option>';
+    
+    // Get unique students (in case same student appears in multiple subjects)
+    const uniqueStudents = {};
+    students.forEach(student => {
+        if (student.full_name) {
+            uniqueStudents[student.full_name] = student;
+        }
+    });
+    
+    // Populate dropdown
+    Object.keys(uniqueStudents).sort().forEach(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+    });
+    
+    // Show email section if we have students
+    if (Object.keys(uniqueStudents).length > 0) {
+        document.getElementById('emailSection').style.display = 'block';
+    }
+}
+
+function updateSelectedStudent() {
+    const select = document.getElementById('studentSelect');
+    const emailButton = document.getElementById('emailButton');
+    
+    if (select.value) {
+        emailButton.disabled = false;
+    } else {
+        emailButton.disabled = true;
+    }
+}
+
+function openEmailModal() {
+    const select = document.getElementById('studentSelect');
+    const studentName = select.value;
+    
+    if (!studentName) {
+        alert('Please select a student first.');
+        return;
+    }
+    
+    // Get all records for this student
+    const studentRecords = currentReportData.filter(s => s.full_name === studentName);
+    
+    // Update modal with student info
+    document.getElementById('modalStudentName').textContent = studentName;
+    
+    // Build report summary
+    const summaryBody = document.getElementById('modalReportSummary');
+    summaryBody.innerHTML = '';
+    
+    studentRecords.forEach(record => {
+        summaryBody.innerHTML += `
+            <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${record.subject || 'N/A'}</td></tr>
+            <tr><td class="fw-bold" style="width: 50%;">Highest Worksheet Completed:</td><td>${record.highest_ws_completed || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Number of Worksheets:</td><td>${record.num_ws || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Cumulative Study Time:</td><td>${record.cum_study_time || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Current Subject Status:</td><td>${record.current_subject_status || 'N/A'}</td></tr>
+        `;
+    });
+    
+    // Clear previous status
+    document.getElementById('emailStatusMessage').style.display = 'none';
+    document.getElementById('recipientEmail').value = '';
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('emailModal'));
+    modal.show();
+}
+
+function sendReportEmail() {
+    const studentName = document.getElementById('modalStudentName').textContent;
+    const recipientEmail = document.getElementById('recipientEmail').value;
+    const statusDiv = document.getElementById('emailStatusMessage');
+    
+    // Validate email
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.textContent = 'Please enter a valid email address.';
+        statusDiv.style.display = 'block';
+        return;
+    }
+    
+    // Get all records for this student
+    const studentRecords = currentReportData.filter(s => s.full_name === studentName);
+    
+    // Show loading state
+    statusDiv.className = 'alert alert-info';
+    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending email...';
+    statusDiv.style.display = 'block';
+    
+    // Send email request
+    fetch('/api/utilities/report-card/send-email', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            student_name: studentName,
+            recipient_email: recipientEmail,
+            report_data: studentRecords
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = '<i class="bi bi-check-circle-fill"></i> ' + data.message;
+            
+            // Clear email field and close modal after 2 seconds
+            setTimeout(() => {
+                bootstrap.Modal.getInstance(document.getElementById('emailModal')).hide();
+            }, 2000);
+        } else {
+            statusDiv.className = 'alert alert-danger';
+            statusDiv.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> ' + (data.error || 'Failed to send email');
+        }
+        statusDiv.style.display = 'block';
+    })
+    .catch(error => {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error: ' + error.message;
+        statusDiv.style.display = 'block';
+    });
+}
 </script>
 
-<style>
-@media print {
-    .btn {
-        display: none;
     }
 }
 </style>

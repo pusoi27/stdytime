@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run app to verify availability rules",
+			"type": "shell",
+			"command": "c:\\Users\\octav\\AppData\\Local\\Programs\\Python\\Python312\\005_KumoClock\\.venv\\Scripts\\python.exe",
+			"args": [
+				"app.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
