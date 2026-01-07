@@ -68,6 +68,7 @@ def register_api_routes(app):
                 "active": s[7] if len(s) > 7 else 0,
                 "book_loaned": s[8] if len(s) > 8 else 0,
                 "paper_ws": s[9] if len(s) > 9 else 0,
+                "has_active_loan": s[10] if len(s) > 10 else 0,
                 "status": status,
                 "start_time": start_time,
                 "total_seconds": total_seconds,

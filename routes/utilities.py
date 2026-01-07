@@ -1,0 +1,715 @@
+"""
+Utilities routes for KumoClock
+- Student Report Card
+- Student Evaluation  
+- Award Ceremony Analysis
+"""
+
+from flask import Blueprint, render_template, request, jsonify, send_file, session
+from datetime import datetime
+import os
+import sys
+from pathlib import Path
+import uuid
+import json
+import pandas as pd
+import numpy as np
+from werkzeug.utils import secure_filename
+
+# Add parent directory to path for module imports
+PARENT_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PARENT_DIR / 'modules'))
+
+from modules.database import get_db_connection
+from modules.utils import format_hhmm
+
+# Temporary storage directory for report-card file data to avoid bloating session cookies
+TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
+TEMP_REPORTCARD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _get_report_card_token():
+    """Return a stable per-session token; create if missing."""
+    token = session.get('report_card_token')
+    if not token:
+        token = uuid.uuid4().hex
+        session['report_card_token'] = token
+        session.modified = True
+    return token
+
+
+def _save_subject_payload(token: str, subject: str, payload: dict):
+    """Persist subject payload to disk (JSON) and keep only minimal metadata in session."""
+    subject_key = subject.lower()
+    token_dir = TEMP_REPORTCARD_DIR / token
+    token_dir.mkdir(parents=True, exist_ok=True)
+    file_path = token_dir / f"{subject_key}.json"
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+    # Store lightweight metadata in session (to keep cookie small)
+    meta = session.get('report_card_meta', {})
+    meta[subject_key] = {
+        'subject': payload.get('subject', subject.title()),
+        'filename': payload.get('filename'),
+        'columns': payload.get('columns', []),
+        'path': str(file_path)
+    }
+    session['report_card_meta'] = meta
+    session.modified = True
+
+
+def _load_subject_payload(token: str, subject_key: str):
+    """Load subject payload from disk for this session token."""
+    token_dir = TEMP_REPORTCARD_DIR / token
+    file_path = token_dir / f"{subject_key}.json"
+    if not file_path.exists():
+        return None
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def register_utilities_routes(app):
+    """Register all utilities routes"""
+    
+    @app.route('/utilities')
+    def utilities_index():
+        """Main utilities page"""
+        return render_template('utilities/index.html')
+    
+    # ==================== Student Report Card ====================
+    @app.route('/utilities/report-card')
+    def report_card_page():
+        """Student Report Card page"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all students for the dropdown
+        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
+        conn.close()
+        
+        return render_template('utilities/report_card.html', students=students)
+    
+    @app.route('/api/utilities/report-card/<int:student_id>', methods=['GET'])
+    def api_get_report_card(student_id):
+        """Get student report card data"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get student info including active status and subject
+            cursor.execute('SELECT id, name, email, phone, active, subject FROM students WHERE id = ?', (student_id,))
+            student = cursor.fetchone()
+            
+            if not student:
+                conn.close()
+                return jsonify({'error': 'Student not found'}), 404
+            
+            # Get attendance records (using correct table name 'sessions')
+            cursor.execute('''
+                SELECT DATE(start_time) as date, COUNT(*) as sessions, 
+                       SUM(CASE WHEN end_time IS NOT NULL THEN 1 ELSE 0 END) as attended
+                FROM sessions 
+                WHERE student_id = ? 
+                GROUP BY DATE(start_time)
+                ORDER BY date DESC
+                LIMIT 30
+            ''', (student_id,))
+            
+            attendance = []
+            for row in cursor.fetchall():
+                attendance.append({
+                    'date': row[0],
+                    'sessions': row[1],
+                    'attended': row[2] if row[2] else 0
+                })
+            
+            conn.close()
+            
+            # Check if student is active
+            is_active = student[4] == 1
+            student_name = student[1]
+            student_subject = student[5] or ''
+            
+            # Helper function to normalize names for matching
+            def normalize_name_for_matching(name):
+                """
+                Extracts comparable parts from a name, handling abbreviations.
+                Examples:
+                - "Aahan Agarwal" -> ["aahan", "agarwal"]
+                - "Aahan A." -> ["aahan", "a"]
+                - "Kella St Luce" -> ["kella", "st", "luce"]
+                - "Kella St.L." -> ["kella", "st", "l"]
+                """
+                if not name:
+                    return []
+                # Remove extra punctuation and split
+                name = name.strip().lower()
+                # Split by spaces and remove periods
+                parts = []
+                for part in name.split():
+                    # Remove periods and keep the core word/letter
+                    clean_part = part.replace('.', '')
+                    if clean_part:
+                        parts.append(clean_part)
+                return parts
+            
+            def names_match(db_name, file_name):
+                """
+                Compare two names with flexible matching:
+                - Must have matching first name
+                - Additional name parts should be compatible (exact or abbreviation)
+                """
+                db_parts = normalize_name_for_matching(db_name)
+                file_parts = normalize_name_for_matching(file_name)
+                
+                if not db_parts or not file_parts:
+                    return False
+                
+                # First names MUST match exactly
+                if db_parts[0] != file_parts[0]:
+                    return False
+                
+                # If either name has only first name, that's a match
+                if len(db_parts) == 1 or len(file_parts) == 1:
+                    return True
+                
+                # For multi-part names, check remaining parts for compatibility
+                # Compare parts position by position
+                for i in range(1, min(len(db_parts), len(file_parts))):
+                    db_part = db_parts[i]
+                    file_part = file_parts[i]
+                    
+                    # Parts match if:
+                    # 1. Exact match: "agarwal" == "agarwal"
+                    # 2. One is abbrev of other: "agarwal".startswith("a") or "a".startswith("agarwal")
+                    if db_part != file_part and not (db_part.startswith(file_part) or file_part.startswith(db_part)):
+                        # This part doesn't match and isn't compatible
+                        return False
+                
+                # All checked parts matched
+                return True
+            
+            # Get subject data from temp storage (disk) if student is active
+            subject_data = {'math': None, 'reading': None}
+            if is_active and session.get('report_card_token'):
+                token = session['report_card_token']
+                for subject_key in ['math', 'reading']:
+                    payload = _load_subject_payload(token, subject_key)
+                    if not payload:
+                        continue
+                    for record in payload.get('data', []):
+                        record_name = str(record.get('name', '') or record.get('Name', '') or record.get('Student Name', ''))
+                        if names_match(student_name, record_name):
+                            subj = str(record.get('subject', '') or record.get('Subject', '')).lower()
+                            highest_ws = record.get('Highest WS Completed') or record.get('Highest WS Completed This Month') or '-'
+                            num_ws = record.get('# of WS') or record.get('Number of Worksheets') or '-'
+                            study_days = record.get('# of Study Days') or record.get('Study Days') or '-'
+                            cum_study_time = record.get('Cum. Study Time') or record.get('Cumulative Study Time') or '-'
+                            entry = {
+                                'highest_ws': highest_ws,
+                                'num_ws': num_ws,
+                                'study_days': study_days,
+                                'cum_study_time': cum_study_time
+                            }
+                            if 'math' in subj:
+                                subject_data['math'] = entry
+                            elif 'reading' in subj:
+                                subject_data['reading'] = entry
+            
+            return jsonify({
+                'student': {
+                    'id': student[0],
+                    'name': student[1],
+                    'email': student[2],
+                    'phone': student[3],
+                    'active': is_active,
+                    'subject': student_subject
+                },
+                'attendance': attendance,
+                'subject_data': subject_data
+            })
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/report-card/export/<int:student_id>', methods=['GET'])
+    def api_export_report_card(student_id):
+        """Export report card as PDF/CSV"""
+        try:
+            # This would generate a PDF report
+            # For now, return a basic response
+            return jsonify({'message': 'Report card export functionality coming soon'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/report-card/generate-report', methods=['GET'])
+    def api_generate_unified_report():
+        """Return structured rows for Math/Reading with inactive filtered out"""
+        try:
+            def get_field(record, candidate_keys):
+                """Get first matching key (case-insensitive)."""
+                lower_map = {str(k).lower(): v for k, v in record.items()}
+                for key in candidate_keys:
+                    if key.lower() in lower_map:
+                        return lower_map[key.lower()]
+                return None
+
+            structured_rows = []
+
+            token = session.get('report_card_token')
+            meta = session.get('report_card_meta', {}) if token else {}
+
+            for subject_key in ['math', 'reading']:
+                payload = _load_subject_payload(token, subject_key) if token else None
+                if not payload:
+                    continue
+
+                subject_label = (payload.get('subject') or subject_key.title()).strip()
+                filename = payload.get('filename', subject_label)
+
+                for record in payload.get('data', []):
+                    # Determine status and skip inactive rows
+                    status = get_field(record, ['Current Subject Status', 'Status'])
+                    status_str = str(status).strip() if status is not None else ''
+                    if status_str.lower() == 'inactive':
+                        continue
+
+                    structured_rows.append({
+                        'subject': subject_label or filename,
+                        'full_name': get_field(record, ['Full Name', 'Student Name', 'Name']) or '',
+                        'highest_ws_completed': get_field(record, ['Highest WS Completed', 'Highest WS Completed This Month']) or '',
+                        'num_ws': get_field(record, ['# of WS', 'Number of Worksheets']) or '',
+                        'study_days': get_field(record, ['# of Study Days', 'Study Days']) or '',
+                        'cum_study_time': get_field(record, ['Cum. Study Time', 'Cumulative Study Time']) or '',
+                        'current_subject_status': status_str or ''
+                    })
+
+            return jsonify({'students': structured_rows})
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/report-card/load-file', methods=['POST'])
+    def api_load_subject_file():
+        """Load Math or Reading file and parse data - subject extracted from filename"""
+        try:
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file provided'}), 400
+            
+            file = request.files['file']
+            
+            if file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+            
+            filename = file.filename
+            file_ext = os.path.splitext(filename)[1].lower()
+            
+            # Extract subject from filename
+            if 'math' in filename.lower():
+                subject = 'Math'
+            elif 'reading' in filename.lower():
+                subject = 'Reading'
+            else:
+                return jsonify({'error': 'Filename must contain "Math" or "Reading"'}), 400
+            
+            # Parse file
+            try:
+                df = None
+                used_encoding = None
+                used_delimiter = None
+                parse_attempts = []
+                
+                if file_ext in ['.xlsx', '.xls']:
+                    df = pd.read_excel(file)
+                    used_encoding = 'excel'
+                    used_delimiter = 'excel'
+                elif file_ext == '.csv':
+                    # Try reading CSV with multiple encodings and delimiters, skipping bad lines
+                    encodings = ['utf-8', 'utf-8-sig', 'latin-1', 'windows-1252']
+                    delimiters = [None, ',', ';', '\t', '|']  # None lets pandas sniff
+                    for enc in encodings:
+                        for sep in delimiters:
+                            try:
+                                file.seek(0)
+                                df = pd.read_csv(
+                                    file,
+                                    encoding=enc,
+                                    sep=sep,
+                                    engine='python',
+                                    on_bad_lines='skip'
+                                )
+                                used_encoding = enc
+                                used_delimiter = sep or 'auto-detect'
+                                break
+                            except Exception as err:
+                                parse_attempts.append(f"encoding={enc}, sep={sep or 'auto'} -> {err}")
+                        if df is not None:
+                            break
+                else:
+                    return jsonify({'success': False, 'error': 'Use Excel (.xlsx, .xls) or CSV file'}), 400
+                
+                if df is None:
+                    return jsonify({
+                        'success': False,
+                        'error': 'Failed to parse file',
+                        'attempts': parse_attempts
+                    }), 400
+                
+                # Ensure Subject column exists with the detected subject for all rows
+                try:
+                    df['Subject'] = subject
+                except Exception:
+                    # If for some reason assignment fails, fall back to copy
+                    df = df.copy()
+                    df['Subject'] = subject
+
+                # Replace NaN/NaT/inf/-inf with None so JSON returned is valid
+                # Must be done BEFORE to_dict() to ensure clean JSON serialization
+                df = df.replace([np.inf, -np.inf], np.nan)
+                df = df.fillna('')  # Replace all NaN with empty string for JSON safety
+                
+                # Convert dataframe to list of dicts for response
+                file_data = df.to_dict('records')
+
+                # Persist to disk (per-session token) to avoid cookie bloat
+                token = _get_report_card_token()
+                payload = {
+                    'filename': filename,
+                    'subject': subject,
+                    'data': file_data,
+                    'columns': list(df.columns),
+                    'parse_meta': {
+                        'encoding': used_encoding,
+                        'delimiter': used_delimiter
+                    }
+                }
+                _save_subject_payload(token, subject, payload)
+
+                # Clean any legacy in-session blobs to keep cookie minimal
+                session.pop(f'{subject.lower()}_file_data', None)
+                session.pop('loaded_subject_data', None)
+
+                return jsonify({
+                    'success': True,
+                    'subject': subject,
+                    'filename': filename,
+                    'records': len(df),
+                    'columns': list(df.columns),
+                    'data': file_data,
+                    'parse_meta': {
+                        'encoding': used_encoding,
+                        'delimiter': used_delimiter,
+                        'attempts': parse_attempts[-5:]  # show a few failures for debugging
+                    }
+                })
+                
+            except Exception as parse_error:
+                import traceback
+                error_trace = traceback.format_exc()
+                return jsonify({'success': False, 'error': f'Parse error: {str(parse_error)}', 'trace': error_trace}), 400
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    
+    # ==================== Student Evaluation ====================
+    @app.route('/utilities/evaluation')
+    def evaluation_page():
+        """Student Evaluation page"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all students for the dropdown
+        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
+        conn.close()
+        
+        return render_template('utilities/evaluation.html', students=students)
+    
+    @app.route('/api/utilities/evaluation/<int:student_id>', methods=['GET'])
+    def api_get_evaluation(student_id):
+        """Get student evaluation data"""
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get student info
+            cursor.execute('SELECT id, name, photo FROM students WHERE id = ?', (student_id,))
+            student = cursor.fetchone()
+            
+            if not student:
+                conn.close()
+                return jsonify({'error': 'Student not found'}), 404
+            
+            # Get performance metrics
+            cursor.execute('''
+                SELECT 
+                    COUNT(*) as total_sessions,
+                    SUM(CASE WHEN checked_out = 1 THEN 1 ELSE 0 END) as attended,
+                    COUNT(DISTINCT DATE(session_start)) as days_attended
+                FROM session_log 
+                WHERE student_id = ?
+            ''', (student_id,))
+            
+            metrics = cursor.fetchone()
+            
+            conn.close()
+            
+            attendance_rate = 0
+            if metrics[0] > 0:
+                attendance_rate = round((metrics[1] or 0) / metrics[0] * 100, 2)
+            
+            return jsonify({
+                'student': {
+                    'id': student[0],
+                    'name': student[1],
+                    'photo': student[2]
+                },
+                'metrics': {
+                    'total_sessions': metrics[0],
+                    'attended': metrics[1] or 0,
+                    'days_attended': metrics[2],
+                    'attendance_rate': attendance_rate
+                }
+            })
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    
+    # ==================== Award Ceremony ====================
+    @app.route('/utilities/award-ceremony')
+    def award_ceremony_page():
+        """Award Ceremony page"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all students
+        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return render_template('utilities/award_ceremony.html', students=students)
+    
+    @app.route('/api/utilities/award-ceremony/analyze', methods=['POST'])
+    def api_analyze_awards():
+        """Analyze and determine awards for students"""
+        try:
+            data = request.get_json(silent=True) or {}
+            criteria = data.get('criteria', {})
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get all students with their metrics
+            cursor.execute('''
+                SELECT 
+                    s.id,
+                    s.name,
+                    COUNT(*) as total_sessions,
+                    SUM(CASE WHEN checked_out = 1 THEN 1 ELSE 0 END) as attended,
+                    COUNT(DISTINCT DATE(session_log.session_start)) as days_attended
+                FROM students s
+                LEFT JOIN session_log ON s.id = session_log.student_id
+                GROUP BY s.id, s.name
+                ORDER BY s.name
+            ''')
+            
+            students = cursor.fetchall()
+            conn.close()
+            
+            awards_list = []
+            
+            # Basic award criteria (customizable)
+            for student in students:
+                student_id, name, total_sessions, attended, days_attended = student
+                attended = attended or 0
+                days_attended = days_attended or 0
+                
+                awards = []
+                
+                # Perfect Attendance
+                if total_sessions > 0 and attended == total_sessions:
+                    awards.append('Perfect Attendance')
+                
+                # High Attendance (95%+)
+                if total_sessions > 0 and (attended / total_sessions * 100) >= 95:
+                    awards.append('High Attendance')
+                
+                # Regular Participant (10+ days)
+                if days_attended >= 10:
+                    awards.append('Regular Participant')
+                
+                # Dedicated Student (20+ sessions)
+                if total_sessions >= 20:
+                    awards.append('Dedicated Student')
+                
+                awards_list.append({
+                    'id': student_id,
+                    'name': name,
+                    'metrics': {
+                        'total_sessions': total_sessions,
+                        'attended': attended,
+                        'days_attended': days_attended,
+                        'attendance_rate': round((attended / total_sessions * 100) if total_sessions > 0 else 0, 2)
+                    },
+                    'awards': awards
+                })
+            
+            return jsonify({'awards': awards_list})
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/award-ceremony/export', methods=['POST'])
+    def api_export_awards():
+        """Export award ceremony results"""
+        try:
+            data = request.get_json(silent=True) or {}
+            awards = data.get('awards', [])
+            
+            # Generate CSV content
+            csv_content = "StudentID,Name,Attendance Rate,Awards\n"
+            for award in awards:
+                attendance_rate = award['metrics']['attendance_rate']
+                award_list = '; '.join(award['awards']) if award['awards'] else 'No Awards'
+                csv_content += f"{award['id']},{award['name']},{attendance_rate}%,\"{award_list}\"\n"
+            
+            return jsonify({
+                'success': True,
+                'message': 'Awards exported successfully',
+                'csv': csv_content
+            })
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500    
+    # ==================== Diploma Generation ====================
+    @app.route('/utilities/diploma-generator')
+    def diploma_generator_page():
+        """Diploma/Certificate generation page"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all students for the dropdown
+        cursor.execute('SELECT id, name, subject, level FROM students ORDER BY name')
+        students = [
+            {
+                'id': row[0],
+                'name': row[1],
+                'subject': row[2],
+                'level': row[3]
+            }
+            for row in cursor.fetchall()
+        ]
+        conn.close()
+        
+        return render_template('utilities/diploma_generator.html', students=students)
+    
+    @app.route('/api/utilities/diploma-generator/generate', methods=['POST'])
+    def api_generate_diplomas():
+        """Generate diplomas for selected students"""
+        try:
+            from modules.diploma_generator import generate_diplomas, convert_diplomas_to_pdf
+            
+            data = request.get_json(silent=True) or {}
+            student_names = data.get('students', [])
+            diploma_type = data.get('diploma_type', 'Certificate')
+            include_pdf = data.get('include_pdf', False)
+            
+            if not student_names:
+                return jsonify({'error': 'No students selected'}), 400
+            
+            # Get the template and output directories
+            template_dir = str(Path(__file__).parents[1] / 'data')
+            output_docx = str(Path(__file__).parents[1] / 'exports' / 'diplomas_docx')
+            output_pdf = str(Path(__file__).parents[1] / 'exports' / 'diplomas_pdf')
+            
+            # Create a temporary CSV with selected students
+            import tempfile
+            import csv
+            
+            temp_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+            csv_writer = csv.writer(temp_csv)
+            csv_writer.writerow(['Full Name', 'Diploma', 'Subject', 'NormalizedLevel'])
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            for name in student_names:
+                cursor.execute(
+                    'SELECT name, subject, level FROM students WHERE name = ?',
+                    (name,)
+                )
+                row = cursor.fetchone()
+                if row:
+                    csv_writer.writerow([row[0], diploma_type, row[1], row[2]])
+            
+            conn.close()
+            temp_csv.close()
+            
+            # Generate diplomas
+            diplomas = generate_diplomas(
+                temp_csv.name,
+                template_dir,
+                output_docx,
+                student_names
+            )
+            
+            result = {
+                'success': True,
+                'generated': len(diplomas),
+                'diplomas': diplomas,
+                'output_dir': output_docx
+            }
+            
+            # Convert to PDF if requested
+            if include_pdf and len(diplomas) > 0:
+                pdf_result = convert_diplomas_to_pdf(diplomas, output_pdf)
+                result['pdf_generated'] = pdf_result['success_count']
+                result['pdf_failed'] = pdf_result['failed']
+                result['pdf_dir'] = pdf_result['output_dir']
+            
+            # Clean up temp file
+            os.unlink(temp_csv.name)
+            
+            return jsonify(result)
+        
+        except ImportError as e:
+            return jsonify({
+                'error': f'Required module not found: {str(e)}',
+                'message': 'Install python-docx and docx2pdf: pip install python-docx docx2pdf'
+            }), 500
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/utilities/diploma-generator/templates', methods=['GET'])
+    def api_get_diploma_templates():
+        """Get available diploma templates"""
+        try:
+            template_dir = Path(__file__).parents[1] / 'data'
+            templates = []
+            
+            template_files = {
+                'Award': 'Certificate of Award.docx',
+                'Certificate': 'Certificate of Recognition.docx',
+                'Welcome': 'Certificate of Welcome.docx'
+            }
+            
+            for name, filename in template_files.items():
+                path = template_dir / filename
+                templates.append({
+                    'type': name,
+                    'filename': filename,
+                    'exists': path.exists()
+                })
+            
+            return jsonify({'templates': templates})
+        
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500

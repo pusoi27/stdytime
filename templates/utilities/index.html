@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Utilities - KumoClock{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h1><i class="bi bi-wrench-adjustable"></i> Utilities</h1>
+            <p class="text-muted">Advanced tools for student management and analysis</p>
+        </div>
+    </div>
+
+    <!-- Utilities Cards -->
+    <div class="row">
+        <!-- Student Report Card -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm border-0 hover-shadow" style="cursor: pointer;" onclick="window.location.href='{{ url_for(\"report_card_page\") }}'">
+                <div class="card-body text-center">
+                    <i class="bi bi-file-text" style="font-size: 3rem; color: #0d6efd;"></i>
+                    <h5 class="card-title mt-3">Student Report Card</h5>
+                    <p class="card-text text-muted small">Generate detailed attendance and performance reports for individual students</p>
+                </div>
+                <div class="card-footer bg-light border-0">
+                    <small class="text-muted">View attendance, metrics, and history</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Student Evaluation -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm border-0 hover-shadow" style="cursor: pointer;" onclick="window.location.href='{{ url_for(\"evaluation_page\") }}'">
+                <div class="card-body text-center">
+                    <i class="bi bi-graph-up" style="font-size: 3rem; color: #28a745;"></i>
+                    <h5 class="card-title mt-3">Student Evaluation</h5>
+                    <p class="card-text text-muted small">Comprehensive performance evaluation and progress tracking for each student</p>
+                </div>
+                <div class="card-footer bg-light border-0">
+                    <small class="text-muted">Performance metrics and analysis</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Award Ceremony -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100 shadow-sm border-0 hover-shadow" style="cursor: pointer;" onclick="window.location.href='{{ url_for(\"award_ceremony_page\") }}'">
+                <div class="card-body text-center">
+                    <i class="bi bi-trophy" style="font-size: 3rem; color: #ffc107;"></i>
+                    <h5 class="card-title mt-3">Award Ceremony</h5>
+                    <p class="card-text text-muted small">Analyze student performance and generate awards and recognition certificates</p>
+                </div>
+                <div class="card-footer bg-light border-0">
+                    <small class="text-muted">Awards analysis and certificates</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.hover-shadow {
+    transition: all 0.3s ease;
+}
+.hover-shadow:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+</style>
+{% endblock %}

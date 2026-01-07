@@ -20,15 +20,25 @@ def get_all_students():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
-            # Include flags for loaned book and paper worksheet
-            c.execute("SELECT id, name, subject, level, email, phone, photo, active, book_loaned, paper_ws FROM students ORDER BY name")
+            # Include flags for loaned book and paper worksheet, plus active book loan count
+            c.execute("""
+                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.photo, s.active, s.book_loaned, s.paper_ws,
+                       (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
+                FROM students s
+                ORDER BY s.name
+            """)
             return c.fetchall()
         else:
             # Fallback if photo column is missing (migration not yet applied)
-            c.execute("SELECT id, name, subject, level, email, phone, active, book_loaned, paper_ws FROM students ORDER BY name")
+            c.execute("""
+                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.active, s.book_loaned, s.paper_ws,
+                       (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
+                FROM students s
+                ORDER BY s.name
+            """)
             rows = c.fetchall()
             # Return a consistent tuple shape where index 6 is `photo` (None if missing)
-            return [(r[0], r[1], r[2], r[3], r[4], r[5], None, r[6], r[7], r[8]) for r in rows]
+            return [(r[0], r[1], r[2], r[3], r[4], r[5], None, r[6], r[7], r[8], r[9]) for r in rows]
 
 
 def get_student(student_id):

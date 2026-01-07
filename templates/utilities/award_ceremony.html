@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}Award Ceremony - KumoClock{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2><i class="bi bi-trophy"></i> Award Ceremony Analysis</h2>
+            <p class="text-muted">Analyze student performance and determine awards</p>
+        </div>
+    </div>
+
+    <!-- Analysis Controls -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> Award Analysis Settings</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label for="minAttendance" class="form-label">Minimum Attendance %</label>
+                            <input type="number" id="minAttendance" class="form-control" value="95" min="0" max="100">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="minSessions" class="form-label">Minimum Sessions</label>
+                            <input type="number" id="minSessions" class="form-control" value="10" min="1">
+                        </div>
+                        <div class="col-md-4" style="display: flex; align-items: flex-end;">
+                            <button class="btn btn-success w-100" onclick="analyzeAwards()">
+                                <i class="bi bi-play-fill"></i> Analyze Awards
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Container -->
+    <div id="awardResultsContainer" style="display: none;">
+        <!-- Summary Stats -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body">
+                        <h4 id="totalStudentsCount" class="text-primary">-</h4>
+                        <small class="text-muted">Total Students Analyzed</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body">
+                        <h4 id="awardWinnersCount" class="text-success">-</h4>
+                        <small class="text-muted">Award Winners</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body">
+                        <h4 id="totalAwardsCount" class="text-warning">-</h4>
+                        <small class="text-muted">Total Awards Earned</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-center shadow-sm">
+                    <div class="card-body">
+                        <h4 id="avgAttendanceCount" class="text-info">-</h4>
+                        <small class="text-muted">Average Attendance %</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Awards Table -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-table"></i> Award Analysis Results</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover" id="awardTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Student Name</th>
+                                        <th>Sessions Attended</th>
+                                        <th>Attendance Rate</th>
+                                        <th>Awards</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="awardTableBody">
+                                    <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Buttons -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <button class="btn btn-primary me-2" onclick="exportAwardsCSV()">
+                    <i class="bi bi-download"></i> Export as CSV
+                </button>
+                <button class="btn btn-secondary me-2" onclick="generateCertificates()">
+                    <i class="bi bi-file-earmark-pdf"></i> Generate Certificates
+                </button>
+                <button class="btn btn-info" onclick="printAwards()">
+                    <i class="bi bi-printer"></i> Print Results
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- No Results Message -->
+    <div id="noResultsMessage" class="alert alert-info">
+        <i class="bi bi-info-circle"></i> Click "Analyze Awards" to begin the award analysis.
+    </div>
+</div>
+
+<script>
+let currentAwardsData = null;
+
+function analyzeAwards() {
+    const minAttendance = parseFloat(document.getElementById('minAttendance').value);
+    const minSessions = parseInt(document.getElementById('minSessions').value);
+    
+    const criteria = {
+        minAttendance: minAttendance,
+        minSessions: minSessions
+    };
+    
+    fetch('/api/utilities/award-ceremony/analyze', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ criteria: criteria })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to analyze awards');
+        }
+        return response.json();
+    })
+    .then(data => {
+        currentAwardsData = data.awards;
+        displayAwardResults(data.awards);
+    })
+    .catch(error => {
+        alert('Error analyzing awards: ' + error.message);
+    });
+}
+
+function displayAwardResults(awards) {
+    // Calculate summary stats
+    const totalStudents = awards.length;
+    const awardWinners = awards.filter(a => a.awards.length > 0).length;
+    const totalAwards = awards.reduce((sum, a) => sum + a.awards.length, 0);
+    const avgAttendance = (awards.reduce((sum, a) => sum + a.metrics.attendance_rate, 0) / totalStudents).toFixed(2);
+    
+    // Update summary cards
+    document.getElementById('totalStudentsCount').textContent = totalStudents;
+    document.getElementById('awardWinnersCount').textContent = awardWinners;
+    document.getElementById('totalAwardsCount').textContent = totalAwards;
+    document.getElementById('avgAttendanceCount').textContent = avgAttendance + '%';
+    
+    // Update table
+    const tbody = document.getElementById('awardTableBody');
+    tbody.innerHTML = '';
+    
+    awards.forEach(student => {
+        const awardsList = student.awards.length > 0 
+            ? student.awards.map(a => `<span class="badge bg-success me-1 mb-1">${a}</span>`).join('')
+            : '<span class="text-muted">No awards</span>';
+        
+        tbody.innerHTML += `
+            <tr>
+                <td><strong>${student.name}</strong></td>
+                <td>${student.metrics.attended}/${student.metrics.total_sessions}</td>
+                <td>
+                    <div class="progress" style="height: 20px;">
+                        <div class="progress-bar ${getProgressBarColor(student.metrics.attendance_rate)}" 
+                             style="width: ${student.metrics.attendance_rate}%">
+                            ${student.metrics.attendance_rate}%
+                        </div>
+                    </div>
+                </td>
+                <td>${awardsList}</td>
+            </tr>
+        `;
+    });
+    
+    // Show results, hide message
+    document.getElementById('awardResultsContainer').style.display = 'block';
+    document.getElementById('noResultsMessage').style.display = 'none';
+}
+
+function getProgressBarColor(percentage) {
+    if (percentage >= 95) return 'bg-success';
+    if (percentage >= 85) return 'bg-info';
+    if (percentage >= 75) return 'bg-warning';
+    return 'bg-danger';
+}
+
+function exportAwardsCSV() {
+    if (!currentAwardsData) {
+        alert('No awards data to export');
+        return;
+    }
+    
+    fetch('/api/utilities/award-ceremony/export', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ awards: currentAwardsData })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Create CSV download
+            const csv = data.csv;
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'award_ceremony_' + new Date().toISOString().split('T')[0] + '.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error exporting awards: ' + error.message);
+    });
+}
+
+function generateCertificates() {
+    alert('Certificate generation coming soon! This will create PDF certificates for all award winners.');
+}
+
+function printAwards() {
+    window.print();
+}
+</script>
+
+<style>
+@media print {
+    .btn, .form-control, .form-label, .card-header {
+        display: none !important;
+    }
+}
+</style>
+{% endblock %}

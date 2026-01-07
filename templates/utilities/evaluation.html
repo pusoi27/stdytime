@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}Student Evaluation - KumoClock{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2><i class="bi bi-graph-up"></i> Student Evaluation</h2>
+            <p class="text-muted">Comprehensive performance analysis and evaluation</p>
+        </div>
+    </div>
+
+    <!-- Student Selection -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <label for="studentEvalSelect" class="form-label"><strong>Select Student</strong></label>
+                    <select id="studentEvalSelect" class="form-select">
+                        <option value="">-- Choose a student --</option>
+                        {% for student in students %}
+                        <option value="{{ student.id }}">{{ student.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Evaluation Container -->
+    <div id="evaluationContainer" style="display: none;">
+        <!-- Student Header -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-2">
+                                <img id="studentPhoto" src="" alt="Student Photo" 
+                                     class="img-fluid rounded" style="max-width: 150px;">
+                            </div>
+                            <div class="col-md-10">
+                                <h4 id="evalStudentName" class="mb-3">-</h4>
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <div class="text-center p-3 bg-light rounded">
+                                            <h5 id="totalSessionsEval" class="text-primary">-</h5>
+                                            <small class="text-muted">Total Sessions</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center p-3 bg-light rounded">
+                                            <h5 id="attendedEval" class="text-success">-</h5>
+                                            <small class="text-muted">Sessions Attended</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center p-3 bg-light rounded">
+                                            <h5 id="daysAttendedEval" class="text-info">-</h5>
+                                            <small class="text-muted">Days Attended</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="text-center p-3 bg-light rounded">
+                                            <h5 id="attendanceRateEval" class="text-warning">-</h5>
+                                            <small class="text-muted">Attendance Rate</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Metrics -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-bar-chart-line"></i> Performance Metrics</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <small class="text-muted">Attendance Consistency</small>
+                                <div class="progress mt-2" style="height: 25px;">
+                                    <div id="consistencyBar" class="progress-bar bg-success" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <small class="text-muted">Session Frequency</small>
+                                <div class="progress mt-2" style="height: 25px;">
+                                    <div id="frequencyBar" class="progress-bar bg-info" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Evaluation Score -->
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="bi bi-star-fill"></i> Overall Evaluation</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <h3 id="overallScore" class="text-primary">-</h3>
+                        <p id="evaluationSummary" class="text-muted">-</p>
+                        <div id="evaluationBadges"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Analysis -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> Evaluation Report</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="evaluationReport">
+                            <p class="text-muted">Loading evaluation data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <button class="btn btn-primary me-2" onclick="downloadEvaluation()">
+                    <i class="bi bi-download"></i> Download Report
+                </button>
+                <button class="btn btn-secondary" onclick="printEvaluation()">
+                    <i class="bi bi-printer"></i> Print
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- No Selection Message -->
+    <div id="noSelectionEvalMessage" class="alert alert-info">
+        <i class="bi bi-info-circle"></i> Please select a student to view their evaluation.
+    </div>
+</div>
+
+<script>
+document.getElementById('studentEvalSelect').addEventListener('change', function() {
+    const studentId = this.value;
+    if (studentId) {
+        loadEvaluation(studentId);
+    } else {
+        document.getElementById('evaluationContainer').style.display = 'none';
+        document.getElementById('noSelectionEvalMessage').style.display = 'block';
+    }
+});
+
+function loadEvaluation(studentId) {
+    fetch(`/api/utilities/evaluation/${studentId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Failed to load evaluation');
+            }
+            return response.json();
+        })
+        .then(data => {
+            const student = data.student;
+            const metrics = data.metrics;
+            
+            // Update student info
+            document.getElementById('evalStudentName').textContent = student.name;
+            document.getElementById('studentPhoto').src = student.photo ? `/templates_static/img/students/${student.photo}` : '/static/img/placeholder.png';
+            
+            // Update metrics
+            document.getElementById('totalSessionsEval').textContent = metrics.total_sessions;
+            document.getElementById('attendedEval').textContent = metrics.attended;
+            document.getElementById('daysAttendedEval').textContent = metrics.days_attended;
+            document.getElementById('attendanceRateEval').textContent = metrics.attendance_rate + '%';
+            
+            // Calculate evaluation score
+            let score = 0;
+            let remarks = '';
+            
+            if (metrics.attendance_rate >= 95) {
+                score = 95;
+                remarks = 'Excellent attendance and dedication';
+            } else if (metrics.attendance_rate >= 85) {
+                score = 85;
+                remarks = 'Very good attendance';
+            } else if (metrics.attendance_rate >= 75) {
+                score = 75;
+                remarks = 'Good attendance';
+            } else if (metrics.attendance_rate >= 60) {
+                score = 60;
+                remarks = 'Satisfactory attendance';
+            } else {
+                score = 45;
+                remarks = 'Needs improvement in attendance';
+            }
+            
+            // Update bars
+            document.getElementById('consistencyBar').style.width = metrics.attendance_rate + '%';
+            document.getElementById('frequencyBar').style.width = Math.min((metrics.days_attended / 30 * 100), 100) + '%';
+            
+            // Update overall score
+            document.getElementById('overallScore').textContent = score + '/100';
+            document.getElementById('evaluationSummary').textContent = remarks;
+            
+            // Add badges
+            const badges = document.getElementById('evaluationBadges');
+            badges.innerHTML = '';
+            
+            if (metrics.attendance_rate >= 95) {
+                badges.innerHTML += '<span class="badge bg-success me-2 mb-2">Perfect Attendance</span>';
+            }
+            if (metrics.days_attended >= 20) {
+                badges.innerHTML += '<span class="badge bg-info me-2 mb-2">Consistent Participant</span>';
+            }
+            if (metrics.total_sessions >= 15) {
+                badges.innerHTML += '<span class="badge bg-primary me-2 mb-2">Active Student</span>';
+            }
+            
+            // Generate report
+            const report = `
+                <p><strong>Student:</strong> ${student.name}</p>
+                <p><strong>Total Sessions Attended:</strong> ${metrics.attended} out of ${metrics.total_sessions}</p>
+                <p><strong>Days Attended:</strong> ${metrics.days_attended} days</p>
+                <p><strong>Attendance Rate:</strong> ${metrics.attendance_rate}%</p>
+                <hr>
+                <p><strong>Evaluation Summary:</strong></p>
+                <ul>
+                    <li>${metrics.attendance_rate >= 90 ? '✓' : '✗'} Excellent attendance rate (90%+)</li>
+                    <li>${metrics.days_attended >= 15 ? '✓' : '✗'} Regular participation (15+ days)</li>
+                    <li>${metrics.total_sessions >= 20 ? '✓' : '✗'} Consistent engagement (20+ sessions)</li>
+                </ul>
+                <p><strong>Overall Assessment:</strong></p>
+                <p>${remarks}</p>
+            `;
+            
+            document.getElementById('evaluationReport').innerHTML = report;
+            
+            document.getElementById('evaluationContainer').style.display = 'block';
+            document.getElementById('noSelectionEvalMessage').style.display = 'none';
+        })
+        .catch(error => {
+            alert('Error loading evaluation: ' + error.message);
+        });
+}
+
+function downloadEvaluation() {
+    alert('Download functionality coming soon');
+}
+
+function printEvaluation() {
+    window.print();
+}
+</script>
+
+<style>
+@media print {
+    .btn, #studentEvalSelect {
+        display: none;
+    }
+}
+</style>
+{% endblock %}

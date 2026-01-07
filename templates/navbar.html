@@ -6,7 +6,7 @@
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
-    <span class="text-white-50 small">Version 04.05.12</span>
+    <span class="text-white-50 small">Version 06.00.00</span>
 
     <!-- Toggler -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -33,11 +33,9 @@
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="booksMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-journal-bookmark"></i> Library Books</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="#">Add Book</a></li>
-            <li><a class="dropdown-item" href="#">Modify Book</a></li>
-            <li><a class="dropdown-item" href="#">Delete Book</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="#">View Book List</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('books_add') }}">Add Book</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('books_list') }}">View / Edit / Delete</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('books_loan_page') }}">Book Loan</a></li>
           </ul>
         </li>
 
@@ -46,6 +44,18 @@
           <a class="nav-link dropdown-toggle text-white" href="#" id="assistMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Assistants on Duty</a>
           <ul class="dropdown-menu" id="assistantsList">
             <li><a class="dropdown-item disabled text-muted" href="#">Loading assistants...</a></li>
+          </ul>
+        </li>
+
+        <!-- Utilities with dropdown submenu -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle text-white" href="#" id="utilMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-wrench-adjustable"></i> Utilities</a>
+          <ul class="dropdown-menu" aria-labelledby="utilMenu">
+            <li><a class="dropdown-item" href="{{ url_for('report_card_page') }}">Student Report Card</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('evaluation_page') }}">Student Evaluation</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('award_ceremony_page') }}">Award Ceremony</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="{{ url_for('diploma_generator_page') }}"><i class="bi bi-award"></i> Diploma Generator</a></li>
           </ul>
         </li>
 

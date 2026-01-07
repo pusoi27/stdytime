@@ -16,7 +16,7 @@
   <table class="table table-sm table-striped align-middle">
     <thead class="table-primary">
       <tr>
-        <th>ID</th><th>Name</th><th>Subject</th><th>Level</th><th>Email</th><th>Phone</th><th>Photo</th><th>QR</th><th>Actions</th>
+        <th>ID</th><th>Name</th><th>Subject</th><th>Level</th><th>Email</th><th>Phone</th><th>Photo</th><th>QR</th><th>Book Loan</th><th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -38,6 +38,9 @@
         <td>
           {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
           <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'">
+        </td>
+        <td class="text-center">
+          {% if s[10] %}<span class="badge bg-primary">B</span>{% endif %}
         </td>
         <td>
           <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>

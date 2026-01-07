@@ -1,5 +1,5 @@
 # ================================================================
-#  KumoClock v2.2.9 - Main Flask Application (Refactored)
+#  KumoClock v2.3.2 - Main Flask Application (Refactored)
 # ================================================================
 """
 KumoClock: Student class management system with dashboard, QR codes, and PDF label generation.
