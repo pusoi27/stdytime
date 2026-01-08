@@ -271,7 +271,10 @@ function loadMathFile() {
                     loadedFiles.math = true;
                     document.getElementById('mathFileStatus').textContent = 'Math: Loaded ✓';
                     document.getElementById('mathFileStatus').className = 'badge bg-success me-2';
-                    document.getElementById('mathFileInfo').textContent = `📄 ${data.filename || 'Unknown file'} (${recordCount} records)`;
+                    const dates = (data.parse_meta && data.parse_meta.report_dates)
+                        ? ` — Dates: ${data.parse_meta.report_dates.start_date} to ${data.parse_meta.report_dates.end_date}`
+                        : '';
+                    document.getElementById('mathFileInfo').textContent = `📄 ${data.filename || 'Unknown file'} (${recordCount} records)${dates}`;
                     document.getElementById('loadedFilesContainer').style.display = 'block';
                     upsertLoadedData(data.data || []);
                     alert(`${subjectLabel} file loaded: ${data.filename || 'Unknown'}\n${recordCount} records`);
@@ -314,7 +317,10 @@ function loadReadingFile() {
                     loadedFiles.reading = true;
                     document.getElementById('readingFileStatus').textContent = 'Reading: Loaded ✓';
                     document.getElementById('readingFileStatus').className = 'badge bg-success';
-                    document.getElementById('readingFileInfo').textContent = `📄 ${data.filename || 'Unknown file'} (${recordCount} records)`;
+                    const dates = (data.parse_meta && data.parse_meta.report_dates)
+                        ? ` — Dates: ${data.parse_meta.report_dates.start_date} to ${data.parse_meta.report_dates.end_date}`
+                        : '';
+                    document.getElementById('readingFileInfo').textContent = `📄 ${data.filename || 'Unknown file'} (${recordCount} records)${dates}`;
                     document.getElementById('loadedFilesContainer').style.display = 'block';
                     upsertLoadedData(data.data || []);
                     alert(`${subjectLabel} file loaded: ${data.filename || 'Unknown'}\n${recordCount} records`);

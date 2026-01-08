@@ -15,6 +15,8 @@ import json
 import pandas as pd
 import numpy as np
 from werkzeug.utils import secure_filename
+import re
+import calendar
 
 # Add parent directory to path for module imports
 PARENT_DIR = Path(__file__).resolve().parents[2]
@@ -317,6 +319,55 @@ def register_utilities_routes(app):
                 subject = 'Reading'
             else:
                 return jsonify({'error': 'Filename must contain "Math" or "Reading"'}), 400
+
+            # Extract report date range from filename (e.g., "..._Dec 2025_Jan 2026_01072026.csv")
+            def _parse_report_dates(name: str):
+                month_map = {
+                    'jan': 1, 'january': 1,
+                    'feb': 2, 'february': 2,
+                    'mar': 3, 'march': 3,
+                    'apr': 4, 'april': 4,
+                    'may': 5,
+                    'jun': 6, 'june': 6,
+                    'jul': 7, 'july': 7,
+                    'aug': 8, 'august': 8,
+                    'sep': 9, 'sept': 9, 'september': 9,
+                    'oct': 10, 'october': 10,
+                    'nov': 11, 'november': 11,
+                    'dec': 12, 'december': 12,
+                }
+                # Find occurrences of "Mon YYYY"
+                pattern = re.compile(r"(?i)\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b")
+                matches = pattern.findall(name)
+                if not matches:
+                    return None
+                # Build month/year list
+                my = []
+                for mname, year in matches:
+                    mkey = mname.lower()
+                    # normalize 'sept' to 'sep'
+                    if mkey == 'sept':
+                        mkey = 'sep'
+                    month = month_map.get(mkey)
+                    if month:
+                        my.append((int(year), month))
+                if not my:
+                    return None
+                # Start date: first month/year, day=1
+                start_year, start_month = my[0]
+                start_dt = datetime(start_year, start_month, 1)
+                # End date: use second month/year if present; otherwise use first
+                end_year, end_month = my[1] if len(my) > 1 else my[0]
+                now = datetime.now()
+                if end_year == now.year and end_month == now.month:
+                    end_dt = now
+                else:
+                    last_day = calendar.monthrange(end_year, end_month)[1]
+                    end_dt = datetime(end_year, end_month, last_day)
+                # Format M/D/YYYY
+                start_str = f"{start_dt.month}/{start_dt.day}/{start_dt.year}"
+                end_str = f"{end_dt.month}/{end_dt.day}/{end_dt.year}"
+                return {'start_date': start_str, 'end_date': end_str}
             
             # Parse file
             try:
@@ -386,7 +437,8 @@ def register_utilities_routes(app):
                     'columns': list(df.columns),
                     'parse_meta': {
                         'encoding': used_encoding,
-                        'delimiter': used_delimiter
+                        'delimiter': used_delimiter,
+                        'report_dates': _parse_report_dates(filename)
                     }
                 }
                 _save_subject_payload(token, subject, payload)
@@ -405,7 +457,8 @@ def register_utilities_routes(app):
                     'parse_meta': {
                         'encoding': used_encoding,
                         'delimiter': used_delimiter,
-                        'attempts': parse_attempts[-5:]  # show a few failures for debugging
+                        'attempts': parse_attempts[-5:],  # show a few failures for debugging
+                        'report_dates': _parse_report_dates(filename)
                     }
                 })
                 
