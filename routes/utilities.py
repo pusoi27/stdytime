@@ -501,7 +501,7 @@ def register_utilities_routes(app):
             
             student_name = data.get('student_name')
             recipient_email = data.get('recipient_email')
-            instructor_email = data.get('instructor_email')
+            instructor_email_from_client = data.get('instructor_email')  # null if checkbox unchecked
             report_data = data.get('report_data', [])
             
             if not student_name or not recipient_email:
@@ -510,12 +510,17 @@ def register_utilities_routes(app):
             if not report_data or len(report_data) == 0:
                 return jsonify({'success': False, 'error': 'No report data available'}), 400
             
-            # Always load instructor email from profile (ignore client value)
-            profile = instructor_profile_manager.get_instructor_profile()
-            if profile:
-                instructor_email = profile.get('email')
+            # Check if user wants to send to instructor (based on checkbox)
+            send_to_instructor = instructor_email_from_client is not None
             
-            print(f"[send-email] Instructor email from profile: {instructor_email}")
+            # Load instructor email from profile if needed
+            instructor_email = None
+            if send_to_instructor:
+                profile = instructor_profile_manager.get_instructor_profile()
+                if profile:
+                    instructor_email = profile.get('email')
+            
+            print(f"[send-email] Send to instructor: {send_to_instructor}, Instructor email: {instructor_email}")
 
             # Get email manager instance
             email_manager = get_email_manager()
@@ -645,12 +650,12 @@ This is an automated message. Please do not reply.
 </html>
 """
             
-            # Send emails (always to recipient; also to instructor if available)
+            # Send emails based on checkbox state
             sent_count = 0
             email_recipients = []
             errors = []
 
-            # Primary recipient
+            # Email 1: Always send to primary recipient
             print(f"[send-email] Sending to primary recipient: {recipient_email}")
             result = email_manager.send_email(
                 recipient_email=recipient_email,
@@ -666,10 +671,13 @@ This is an automated message. Please do not reply.
                 errors.append(f"Failed to send to {recipient_email}: {result.get('error')}")
                 print(f"[send-email] Failed to send to {recipient_email}: {result.get('error')}")
 
-            # Instructor recipient (if available and different from primary)
-            if instructor_email and instructor_email.strip():
-                instructor_email_clean = instructor_email.strip()
-                if instructor_email_clean != recipient_email:
+            # Email 2: Send to instructor ONLY if checkbox is checked
+            if send_to_instructor:
+                if not instructor_email or not instructor_email.strip():
+                    errors.append("Instructor email is not configured in the profile")
+                    print(f"[send-email] Skipping instructor email: not configured")
+                else:
+                    instructor_email_clean = instructor_email.strip()
                     print(f"[send-email] Sending to instructor: {instructor_email_clean}")
                     result_instructor = email_manager.send_email(
                         recipient_email=instructor_email_clean,
@@ -684,10 +692,8 @@ This is an automated message. Please do not reply.
                     else:
                         errors.append(f"Failed to send to instructor {instructor_email_clean}: {result_instructor.get('error')}")
                         print(f"[send-email] Failed to send to instructor: {result_instructor.get('error')}")
-                else:
-                    print(f"[send-email] Skipping instructor email (same as recipient)")
             else:
-                print(f"[send-email] No instructor email configured")
+                print(f"[send-email] Skipping instructor email: checkbox not checked")
 
             # Return combined result
             if sent_count > 0:
