@@ -25,6 +25,7 @@ sys.path.insert(0, str(PARENT_DIR / 'modules'))
 from modules.database import get_db_connection
 from modules.utils import format_hhmm
 from modules.email_manager import get_email_manager
+from modules import instructor_profile_manager
 
 # Temporary storage directory for report-card file data to avoid bloating session cookies
 TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
@@ -77,6 +78,63 @@ def _load_subject_payload(token: str, subject_key: str):
 
 def register_utilities_routes(app):
     """Register all utilities routes"""
+
+    @app.context_processor
+    def inject_instructor_email():
+        profile = instructor_profile_manager.get_instructor_profile()
+        return {'instructor_email': profile.get('email') if profile else None}
+
+    def _parse_report_dates(name: str):
+        """Parse date range from filename.
+
+        Rules:
+        - Find month+year tokens like "Dec 2025"
+        - Start date = 1st of first month
+        - End date = today if second month is current; otherwise last day of second month
+        - If only one month/year is present, use it for both start/end (end to end-of-month)
+        """
+        month_map = {
+            'jan': 1, 'january': 1,
+            'feb': 2, 'february': 2,
+            'mar': 3, 'march': 3,
+            'apr': 4, 'april': 4,
+            'may': 5,
+            'jun': 6, 'june': 6,
+            'jul': 7, 'july': 7,
+            'aug': 8, 'august': 8,
+            'sep': 9, 'sept': 9, 'september': 9,
+            'oct': 10, 'october': 10,
+            'nov': 11, 'november': 11,
+            'dec': 12, 'december': 12,
+        }
+        pattern = re.compile(r"(?i)\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b")
+        clean_name = (name or '').replace('_', ' ').replace('-', ' ')
+        matches = pattern.findall(clean_name)
+        if not matches:
+            return None
+        my = []
+        for mname, year in matches:
+            mkey = mname.lower()
+            if mkey == 'sept':
+                mkey = 'sep'
+            month = month_map.get(mkey)
+            if month:
+                my.append((int(year), month))
+        if not my:
+            return None
+        start_year, start_month = my[0]
+        start_dt = datetime(start_year, start_month, 1)
+        end_year, end_month = my[1] if len(my) > 1 else my[0]
+        now = datetime.now()
+        if end_year == now.year and end_month == now.month:
+            end_dt = now
+        else:
+            last_day = calendar.monthrange(end_year, end_month)[1]
+            end_dt = datetime(end_year, end_month, last_day)
+        return {
+            'start_date': f"{start_dt.month}/{start_dt.day}/{start_dt.year}",
+            'end_date': f"{end_dt.month}/{end_dt.day}/{end_dt.year}"
+        }
     
     @app.route('/utilities')
     def utilities_index():
@@ -273,6 +331,13 @@ def register_utilities_routes(app):
                     continue
 
                 subject_label = (payload.get('subject') or subject_key.title()).strip()
+                report_dates = None
+                try:
+                    report_dates = (payload.get('parse_meta') or {}).get('report_dates')
+                    if not report_dates:
+                        report_dates = _parse_report_dates(payload.get('filename', ''))
+                except Exception:
+                    report_dates = _parse_report_dates(payload.get('filename', ''))
                 filename = payload.get('filename', subject_label)
 
                 for record in payload.get('data', []):
@@ -289,7 +354,9 @@ def register_utilities_routes(app):
                         'num_ws': get_field(record, ['# of WS', 'Number of Worksheets']) or '',
                         'study_days': get_field(record, ['# of Study Days', 'Study Days']) or '',
                         'cum_study_time': get_field(record, ['Cum. Study Time', 'Cumulative Study Time']) or '',
-                        'current_subject_status': status_str or ''
+                        'current_subject_status': status_str or '',
+                        'start_date': (report_dates or {}).get('start_date') if report_dates else None,
+                        'end_date': (report_dates or {}).get('end_date') if report_dates else None
                     })
 
             return jsonify({'students': structured_rows})
@@ -321,53 +388,6 @@ def register_utilities_routes(app):
                 return jsonify({'error': 'Filename must contain "Math" or "Reading"'}), 400
 
             # Extract report date range from filename (e.g., "..._Dec 2025_Jan 2026_01072026.csv")
-            def _parse_report_dates(name: str):
-                month_map = {
-                    'jan': 1, 'january': 1,
-                    'feb': 2, 'february': 2,
-                    'mar': 3, 'march': 3,
-                    'apr': 4, 'april': 4,
-                    'may': 5,
-                    'jun': 6, 'june': 6,
-                    'jul': 7, 'july': 7,
-                    'aug': 8, 'august': 8,
-                    'sep': 9, 'sept': 9, 'september': 9,
-                    'oct': 10, 'october': 10,
-                    'nov': 11, 'november': 11,
-                    'dec': 12, 'december': 12,
-                }
-                # Find occurrences of "Mon YYYY"
-                pattern = re.compile(r"(?i)\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})\b")
-                matches = pattern.findall(name)
-                if not matches:
-                    return None
-                # Build month/year list
-                my = []
-                for mname, year in matches:
-                    mkey = mname.lower()
-                    # normalize 'sept' to 'sep'
-                    if mkey == 'sept':
-                        mkey = 'sep'
-                    month = month_map.get(mkey)
-                    if month:
-                        my.append((int(year), month))
-                if not my:
-                    return None
-                # Start date: first month/year, day=1
-                start_year, start_month = my[0]
-                start_dt = datetime(start_year, start_month, 1)
-                # End date: use second month/year if present; otherwise use first
-                end_year, end_month = my[1] if len(my) > 1 else my[0]
-                now = datetime.now()
-                if end_year == now.year and end_month == now.month:
-                    end_dt = now
-                else:
-                    last_day = calendar.monthrange(end_year, end_month)[1]
-                    end_dt = datetime(end_year, end_month, last_day)
-                # Format M/D/YYYY
-                start_str = f"{start_dt.month}/{start_dt.day}/{start_dt.year}"
-                end_str = f"{end_dt.month}/{end_dt.day}/{end_dt.year}"
-                return {'start_date': start_str, 'end_date': end_str}
             
             # Parse file
             try:
@@ -481,6 +501,7 @@ def register_utilities_routes(app):
             
             student_name = data.get('student_name')
             recipient_email = data.get('recipient_email')
+            instructor_email = data.get('instructor_email')
             report_data = data.get('report_data', [])
             
             if not student_name or not recipient_email:
@@ -489,6 +510,13 @@ def register_utilities_routes(app):
             if not report_data or len(report_data) == 0:
                 return jsonify({'success': False, 'error': 'No report data available'}), 400
             
+            # Always load instructor email from profile (ignore client value)
+            profile = instructor_profile_manager.get_instructor_profile()
+            if profile:
+                instructor_email = profile.get('email')
+            
+            print(f"[send-email] Instructor email from profile: {instructor_email}")
+
             # Get email manager instance
             email_manager = get_email_manager()
             
@@ -497,7 +525,7 @@ def register_utilities_routes(app):
                 'student_name': student_name,
                 'subjects': []
             }
-            
+
             for record in report_data:
                 combined_report['subjects'].append({
                     'subject': record.get('subject', 'N/A'),
@@ -505,7 +533,9 @@ def register_utilities_routes(app):
                     'num_ws': record.get('num_ws', 'N/A'),
                     'study_days': record.get('study_days', 'N/A'),
                     'cum_study_time': record.get('cum_study_time', 'N/A'),
-                    'current_subject_status': record.get('current_subject_status', 'N/A')
+                    'current_subject_status': record.get('current_subject_status', 'N/A'),
+                    'start_date': record.get('start_date'),
+                    'end_date': record.get('end_date')
                 })
             
             # Create email subject and body
@@ -517,12 +547,17 @@ Dear Parent/Guardian,
 
 Please find below the report card for {student_name}.
 
+*** DO NOT REPLY TO THIS EMAIL ***
+
 """
             for subj in combined_report['subjects']:
+                date_line = ""
+                if subj.get('start_date') or subj.get('end_date'):
+                    date_line = f"Date Range: {subj.get('start_date') or 'N/A'} to {subj.get('end_date') or 'N/A'}\n"
                 body += f"""
 SUBJECT: {subj['subject']}
 -------------------
-Highest Worksheet Completed: {subj['highest_ws_completed']}
+{date_line}Highest Worksheet Completed: {subj['highest_ws_completed']}
 Number of Worksheets: {subj['num_ws']}
 Study Days: {subj['study_days']}
 Cumulative Study Time: {subj['cum_study_time']}
@@ -533,6 +568,7 @@ Current Subject Status: {subj['current_subject_status']}
             body += """
 Best regards,
 KumoClock Academic Management System
+This is an automated message. Please do not reply.
 """
             
             # HTML body
@@ -561,13 +597,20 @@ KumoClock Academic Management System
     <div class="content">
         <p>Dear Parent/Guardian,</p>
         <p>Please find below the report card for <strong>{student_name}</strong>.</p>
+        <div style="padding:10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; color:#856404; margin-bottom:15px;">
+            <strong>Do not reply:</strong> This mailbox is not monitored.
+        </div>
 """
             
             for subj in combined_report['subjects']:
+                date_line = ""
+                if subj.get('start_date') or subj.get('end_date'):
+                    date_line = f"<tr><th>Report Date Range</th><td>{subj.get('start_date') or 'N/A'} to {subj.get('end_date') or 'N/A'}</td></tr>"
                 html_body += f"""
         <div class="subject-section">
             <h3 style="color: #0d6efd; margin-top: 0;">Subject: {subj['subject']}</h3>
             <table class="report-table">
+                {date_line}
                 <tr>
                     <th>Highest Worksheet Completed</th>
                     <td>{subj['highest_ws_completed']}</td>
@@ -602,15 +645,67 @@ KumoClock Academic Management System
 </html>
 """
             
-            # Send email
+            # Send emails (always to recipient; also to instructor if available)
+            sent_count = 0
+            email_recipients = []
+            errors = []
+
+            # Primary recipient
+            print(f"[send-email] Sending to primary recipient: {recipient_email}")
             result = email_manager.send_email(
                 recipient_email=recipient_email,
                 subject=subject,
                 body=body,
                 html_body=html_body
             )
-            
-            return jsonify(result)
+            if result.get('success', False):
+                sent_count += 1
+                email_recipients.append(recipient_email)
+                print(f"[send-email] Success: sent to {recipient_email}")
+            else:
+                errors.append(f"Failed to send to {recipient_email}: {result.get('error')}")
+                print(f"[send-email] Failed to send to {recipient_email}: {result.get('error')}")
+
+            # Instructor recipient (if available and different from primary)
+            if instructor_email and instructor_email.strip():
+                instructor_email_clean = instructor_email.strip()
+                if instructor_email_clean != recipient_email:
+                    print(f"[send-email] Sending to instructor: {instructor_email_clean}")
+                    result_instructor = email_manager.send_email(
+                        recipient_email=instructor_email_clean,
+                        subject=subject,
+                        body=body,
+                        html_body=html_body
+                    )
+                    if result_instructor.get('success', False):
+                        email_recipients.append(instructor_email_clean)
+                        sent_count += 1
+                        print(f"[send-email] Success: sent to instructor {instructor_email_clean}")
+                    else:
+                        errors.append(f"Failed to send to instructor {instructor_email_clean}: {result_instructor.get('error')}")
+                        print(f"[send-email] Failed to send to instructor: {result_instructor.get('error')}")
+                else:
+                    print(f"[send-email] Skipping instructor email (same as recipient)")
+            else:
+                print(f"[send-email] No instructor email configured")
+
+            # Return combined result
+            if sent_count > 0:
+                message = f'Report card sent to {sent_count} recipient(s): {", ".join(email_recipients)}'
+                if errors:
+                    message += f'. Errors: {"; ".join(errors)}'
+                return jsonify({
+                    'success': True,
+                    'message': message,
+                    'recipients': email_recipients,
+                    'errors': errors if errors else None
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to send email to any recipient',
+                    'details': errors
+                })
             
         except Exception as e:
             import traceback

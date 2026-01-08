@@ -160,6 +160,13 @@
                            placeholder="parent@example.com" required>
                     <div class="form-text">Enter the email address where the report should be sent.</div>
                 </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="sendToInstructorEmail" checked>
+                    <label class="form-check-label" for="sendToInstructorEmail">
+                        <strong>Also send to Instructor email</strong>
+                        <span id="instructorEmailDisplay" class="text-muted ms-2"></span>
+                    </label>
+                </div>
                 <div class="mb-3">
                     <label class="form-label fw-bold">Report Summary:</label>
                     <div class="card bg-light">
@@ -185,6 +192,9 @@
 </div>
 
 <script>
+// Preload instructor email into JS from context processor (may be empty)
+window.INSTRUCTOR_EMAIL = "{{ instructor_email or '' }}";
+
 // Track loaded files
 let loadedFiles = {
     math: false,
@@ -452,6 +462,7 @@ function openEmailModal() {
     studentRecords.forEach(record => {
         summaryBody.innerHTML += `
             <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${record.subject || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Report Date Range:</td><td>${(record.start_date || 'N/A')} to ${(record.end_date || 'N/A')}</td></tr>
             <tr><td class="fw-bold" style="width: 50%;">Highest Worksheet Completed:</td><td>${record.highest_ws_completed || 'N/A'}</td></tr>
             <tr><td class="fw-bold">Number of Worksheets:</td><td>${record.num_ws || 'N/A'}</td></tr>
             <tr><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
@@ -464,6 +475,48 @@ function openEmailModal() {
     document.getElementById('emailStatusMessage').style.display = 'none';
     document.getElementById('recipientEmail').value = '';
     
+    // Prefer server-preloaded instructor email (avoids fetch issues)
+    const preloadedInstructorEmail = (window.INSTRUCTOR_EMAIL || '').trim();
+    if (preloadedInstructorEmail) {
+        const checkbox = document.getElementById('sendToInstructorEmail');
+        checkbox.checked = true;
+        checkbox.disabled = false;
+        checkbox.dataset.email = preloadedInstructorEmail;
+        document.getElementById('instructorEmailDisplay').textContent = `(${preloadedInstructorEmail})`;
+    } else {
+        // Fallback: fetch instructor profile
+        fetch('/api/instructor/profile')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data && data.success && data.profile) {
+                    const instructorEmail = data.profile.email;
+                    if (instructorEmail) {
+                        const checkbox = document.getElementById('sendToInstructorEmail');
+                        checkbox.checked = true; // default to sending to instructor
+                        checkbox.disabled = false;
+                        checkbox.dataset.email = instructorEmail;
+                        document.getElementById('instructorEmailDisplay').textContent = `(${instructorEmail})`;
+                        return;
+                    }
+                    document.getElementById('sendToInstructorEmail').disabled = true;
+                    document.getElementById('instructorEmailDisplay').textContent = '(no email configured)';
+                } else {
+                    document.getElementById('sendToInstructorEmail').disabled = true;
+                    document.getElementById('instructorEmailDisplay').textContent = '(no profile configured)';
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching instructor profile:', error);
+                document.getElementById('sendToInstructorEmail').disabled = true;
+                document.getElementById('instructorEmailDisplay').textContent = '(error loading profile)';
+            });
+    }
+    
     // Show modal
     const modal = new bootstrap.Modal(document.getElementById('emailModal'));
     modal.show();
@@ -472,6 +525,8 @@ function openEmailModal() {
 function sendReportEmail() {
     const studentName = document.getElementById('modalStudentName').textContent;
     const recipientEmail = document.getElementById('recipientEmail').value;
+    const sendToInstructor = document.getElementById('sendToInstructorEmail').checked;
+    const instructorEmail = document.getElementById('sendToInstructorEmail').dataset.email;
     const statusDiv = document.getElementById('emailStatusMessage');
     
     // Validate email
@@ -490,6 +545,12 @@ function sendReportEmail() {
     statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Sending email...';
     statusDiv.style.display = 'block';
     
+    // Prepare email recipients
+    const emailRecipients = [recipientEmail];
+    if (sendToInstructor && instructorEmail) {
+        emailRecipients.push(instructorEmail);
+    }
+    
     // Send email request
     fetch('/api/utilities/report-card/send-email', {
         method: 'POST',
@@ -499,6 +560,7 @@ function sendReportEmail() {
         body: JSON.stringify({
             student_name: studentName,
             recipient_email: recipientEmail,
+            instructor_email: sendToInstructor ? instructorEmail : null,
             report_data: studentRecords
         })
     })

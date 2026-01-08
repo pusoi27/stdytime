@@ -73,6 +73,19 @@ def init_db():
         )
     """)
 
+    # Instructor Profile
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS instructor_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            center_location TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
 
     # Sample data

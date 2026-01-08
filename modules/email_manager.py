@@ -144,9 +144,12 @@ Dear Parent/Guardian,
 
 Please find below the report card for {student_name}.
 
+*** DO NOT REPLY TO THIS EMAIL ***
+
 REPORT SUMMARY:
 ---------------
 Subject: {report_data.get('subject', 'N/A')}
+Date Range: {report_data.get('start_date', 'N/A')} to {report_data.get('end_date', 'N/A')}
 Highest Worksheet Completed: {report_data.get('highest_ws_completed', 'N/A')}
 Number of Worksheets: {report_data.get('num_ws', 'N/A')}
 Study Days: {report_data.get('study_days', 'N/A')}
@@ -182,11 +185,18 @@ KumoClock Academic Management System
     <div class="content">
         <p>Dear Parent/Guardian,</p>
         <p>Please find below the report card for <strong>{student_name}</strong>.</p>
+        <div style="padding:10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; color:#856404; margin-bottom:15px;">
+            <strong>Do not reply:</strong> This mailbox is not monitored.
+        </div>
         
         <table class="report-table">
             <tr>
                 <th>Subject</th>
                 <td>{report_data.get('subject', 'N/A')}</td>
+            </tr>
+            <tr>
+                <th>Report Date Range</th>
+                <td>{report_data.get('start_date', 'N/A')} to {report_data.get('end_date', 'N/A')}</td>
             </tr>
             <tr>
                 <th>Highest Worksheet Completed</th>
@@ -211,7 +221,7 @@ KumoClock Academic Management System
         </table>
         
         <div class="footer">
-            <p>This is an automated message from KumoClock Academic Management System.</p>
+            <p>This is an automated message from KumoClock Academic Management System. Please do not reply to this email.</p>
             <p>For any questions, please contact your institution.</p>
         </div>
     </div>

@@ -131,6 +131,7 @@ from routes.api import register_api_routes
 from routes.qr import register_qr_routes
 from routes.reports import register_reports_routes
 from routes.books import register_book_routes
+from routes.instructor_profile import register_instructor_profile_routes
 
 # Register scanner route
 @app.route('/qr/scanner')
@@ -144,6 +145,7 @@ def qr_scanner():
 register_dashboard_routes(app)
 register_student_routes(app, STUDENT_PHOTOS_STATIC, TEMPLATES_STUDENT_PHOTOS, UPLOAD_FOLDER)
 register_assistant_routes(app)
+register_instructor_profile_routes(app)
 register_api_routes(app)
 register_qr_routes(app)
 register_reports_routes(app)
