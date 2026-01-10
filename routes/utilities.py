@@ -26,6 +26,7 @@ from modules.database import get_db_connection
 from modules.utils import format_hhmm
 from modules.email_manager import get_email_manager
 from modules import instructor_profile_manager
+from modules.award_rules_engine import get_worksheets_per_day, normalize_level
 
 # Temporary storage directory for report-card file data to avoid bloating session cookies
 TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
@@ -155,6 +156,55 @@ def register_utilities_routes(app):
         
         return render_template('utilities/report_card.html', students=students)
     
+    @app.route('/api/utilities/get-student-email-by-name', methods=['POST'])
+    def api_get_student_email_by_name():
+        """Get student email by matching first name from full name"""
+        try:
+            data = request.get_json()
+            full_name = data.get('full_name', '').strip()
+            
+            if not full_name:
+                return jsonify({'success': False, 'error': 'No name provided'}), 400
+            
+            # Extract first name (first word)
+            first_name = full_name.split()[0].lower() if full_name else ''
+            
+            if not first_name:
+                return jsonify({'success': False, 'error': 'Invalid name format'}), 400
+            
+            # Query database for students with matching first name
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, email 
+                FROM students 
+                WHERE LOWER(SUBSTR(name, 1, INSTR(name || ' ', ' ') - 1)) = ?
+                ORDER BY name
+            """, (first_name,))
+            
+            matches = cursor.fetchall()
+            conn.close()
+            
+            if not matches:
+                return jsonify({
+                    'success': False,
+                    'error': f'No student found with first name "{first_name.title()}"'
+                })
+            
+            # If multiple matches, return the first one (or could return all for user to choose)
+            student_id, student_name, student_email = matches[0]
+            
+            return jsonify({
+                'success': True,
+                'student_id': student_id,
+                'student_name': student_name,
+                'email': student_email or '',
+                'matches_count': len(matches)
+            })
+            
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route('/api/utilities/report-card/<int:student_id>', methods=['GET'])
     def api_get_report_card(student_id):
         """Get student report card data"""
@@ -510,21 +560,67 @@ def register_utilities_routes(app):
             if not report_data or len(report_data) == 0:
                 return jsonify({'success': False, 'error': 'No report data available'}), 400
             
+            # Load instructor profile to get center name and email
+            profile = instructor_profile_manager.get_instructor_profile()
+            center_location = profile.get('center_location', 'KumoClock Academic Management System') if profile else 'KumoClock Academic Management System'
+            
             # Check if user wants to send to instructor (based on checkbox)
             send_to_instructor = instructor_email_from_client is not None
             
             # Load instructor email from profile if needed
             instructor_email = None
             if send_to_instructor:
-                profile = instructor_profile_manager.get_instructor_profile()
                 if profile:
                     instructor_email = profile.get('email')
             
-            print(f"[send-email] Send to instructor: {send_to_instructor}, Instructor email: {instructor_email}")
+            print(f"[send-email] Send to instructor: {send_to_instructor}, Instructor email: {instructor_email}, Center: {center_location}")
 
             # Get email manager instance
             email_manager = get_email_manager()
             
+            # Helpers for target worksheet calculation
+            def _parse_date(date_str: str):
+                if not date_str:
+                    return None
+                try:
+                    return datetime.strptime(str(date_str), "%m/%d/%Y").date()
+                except Exception:
+                    return None
+
+            def _business_days(start_date, end_date):
+                if not start_date or not end_date:
+                    return None
+                if end_date < start_date:
+                    return None
+                total_days = (end_date - start_date).days + 1
+                weeks = total_days // 7
+                extra = total_days % 7
+                business = weeks * 5
+                start_weekday = start_date.weekday()  # Monday=0
+                for i in range(extra):
+                    if (start_weekday + i) % 7 < 5:
+                        business += 1
+                return business
+
+            def _get_bg_color(actual, target):
+                """Return bgcolor for email tables: green >= 80%, yellow 50-80%, red < 50%"""
+                if actual is None or target is None or target == 0 or target == 'N/A':
+                    return ''
+                try:
+                    act_val = float(actual) if isinstance(actual, (int, float)) else float(actual)
+                    tgt_val = float(target) if isinstance(target, (int, float)) else float(target)
+                    if tgt_val == 0:
+                        return ''
+                    pct = (act_val / tgt_val) * 100
+                    if pct >= 80:
+                        return '#d1e7dd'  # Green
+                    elif pct >= 50:
+                        return '#fff3cd'  # Yellow
+                    else:
+                        return '#f8d7da'  # Red
+                except (ValueError, TypeError):
+                    return ''
+
             # Format report data for email (combine all subjects)
             combined_report = {
                 'student_name': student_name,
@@ -532,10 +628,25 @@ def register_utilities_routes(app):
             }
 
             for record in report_data:
+                subject_name = record.get('subject', 'N/A')
+                highest_ws = record.get('highest_ws_completed')
+                start_date_parsed = _parse_date(record.get('start_date'))
+                end_date_parsed = _parse_date(record.get('end_date'))
+                business_days = _business_days(start_date_parsed, end_date_parsed)
+
+                # Determine worksheets per day from highest worksheet level and subject
+                subj_key = subject_name.lower() if isinstance(subject_name, str) else None
+                worksheets_per_day = get_worksheets_per_day(normalize_level(highest_ws), subject=subj_key)
+
+                target_ws = None
+                if business_days is not None and worksheets_per_day is not None:
+                    target_ws = business_days * worksheets_per_day
+
                 combined_report['subjects'].append({
-                    'subject': record.get('subject', 'N/A'),
-                    'highest_ws_completed': record.get('highest_ws_completed', 'N/A'),
+                    'subject': subject_name,
+                    'target_ws': target_ws if target_ws is not None else 'N/A',
                     'num_ws': record.get('num_ws', 'N/A'),
+                    'study_period': business_days if business_days is not None else 'N/A',
                     'study_days': record.get('study_days', 'N/A'),
                     'cum_study_time': record.get('cum_study_time', 'N/A'),
                     'current_subject_status': record.get('current_subject_status', 'N/A'),
@@ -562,17 +673,18 @@ Please find below the report card for {student_name}.
                 body += f"""
 SUBJECT: {subj['subject']}
 -------------------
-{date_line}Highest Worksheet Completed: {subj['highest_ws_completed']}
-Number of Worksheets: {subj['num_ws']}
+{date_line}Target # Worksheets: {subj.get('target_ws', 'N/A')}
+Number Of Worksheets Completed: {subj['num_ws']}
+Study Period: {subj['study_period']}
 Study Days: {subj['study_days']}
 Cumulative Study Time: {subj['cum_study_time']}
 Current Subject Status: {subj['current_subject_status']}
 
 """
             
-            body += """
+            body += f"""
 Best regards,
-KumoClock Academic Management System
+{center_location}
 This is an automated message. Please do not reply.
 """
             
@@ -597,7 +709,7 @@ This is an automated message. Please do not reply.
 <body>
     <div class="header">
         <h2>🎓 Student Report Card</h2>
-        <p>KumoClock Academic Management System</p>
+        <p>{center_location}</p>
     </div>
     <div class="content">
         <p>Dear Parent/Guardian,</p>
@@ -611,22 +723,38 @@ This is an automated message. Please do not reply.
                 date_line = ""
                 if subj.get('start_date') or subj.get('end_date'):
                     date_line = f"<tr><th>Report Date Range</th><td>{subj.get('start_date') or 'N/A'} to {subj.get('end_date') or 'N/A'}</td></tr>"
+                
+                # Calculate color styling for email-safe rendering
+                num_ws = subj.get('num_ws')
+                target_ws = subj.get('target_ws')
+                ws_bgcolor = _get_bg_color(num_ws, target_ws)
+                ws_row_attr = f' bgcolor="{ws_bgcolor}"' if ws_bgcolor else ''
+                
+                study_days = subj.get('study_days')
+                study_period = subj.get('study_period')
+                sd_bgcolor = _get_bg_color(study_days, study_period)
+                sd_row_attr = f' bgcolor="{sd_bgcolor}"' if sd_bgcolor else ''
+                
                 html_body += f"""
         <div class="subject-section">
             <h3 style="color: #0d6efd; margin-top: 0;">Subject: {subj['subject']}</h3>
             <table class="report-table">
                 {date_line}
                 <tr>
-                    <th>Highest Worksheet Completed</th>
-                    <td>{subj['highest_ws_completed']}</td>
+                    <th>Target # Worksheets</th>
+                    <td>{target_ws}</td>
+                </tr>
+                <tr{ws_row_attr}>
+                    <th>Number Of Worksheets Completed</th>
+                    <td>{num_ws}</td>
                 </tr>
                 <tr>
-                    <th>Number of Worksheets</th>
-                    <td>{subj['num_ws']}</td>
+                    <th>Study Period</th>
+                    <td>{study_period}</td>
                 </tr>
-                <tr>
+                <tr{sd_row_attr}>
                     <th>Study Days</th>
-                    <td>{subj['study_days']}</td>
+                    <td>{study_days}</td>
                 </tr>
                 <tr>
                     <th>Cumulative Study Time</th>
@@ -640,9 +768,9 @@ This is an automated message. Please do not reply.
         </div>
 """
             
-            html_body += """
+            html_body += f"""
         <div class="footer">
-            <p>This is an automated message from KumoClock Academic Management System.</p>
+            <p>This is an automated message from {center_location}.</p>
             <p>For any questions, please contact your institution.</p>
         </div>
     </div>

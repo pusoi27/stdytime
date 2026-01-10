@@ -440,6 +440,80 @@ function updateSelectedStudent() {
     }
 }
 
+// ===== Helpers for target worksheet calculation (mirror of backend logic) =====
+const WORKSHEETS_PER_DAY_STATIC = {
+    // Reading
+    "7A": 10, "6A": 10, "5A": 10, "4A": 10, "3A": 10, "2A": 10,
+    "AI": 10, "AII": 10, "BI": 8, "BII": 8, "CI": 5, "CII": 5,
+    "DI": 4, "DII": 4, "EI": 3, "EII": 3, "FI": 3, "FII": 3,
+    "GI": 2, "GII": 2, "HI": 2, "HII": 2, "II": 1, "III": 1,
+    "J_reading": 1, "K_reading": 1, "L_reading": 1,
+    // Math
+    "6A_math": 10, "5A_math": 10, "4A_math": 10, "3A_math": 10, "2A_math": 10,
+    "A": 8, "B": 5, "C": 4, "D": 3, "E": 2, "F": 2, "G": 2, "H": 2,
+    "I": 1, "J_math": 1, "K_math": 1, "L_math": 1,
+};
+
+function normalizeLevelJS(level) {
+    if (!level) return null;
+    let s = String(level).trim();
+    s = s.replace(/Ⅱ/g, 'II').replace(/Ⅰ/g, 'I').replace(/Ⅲ/g, 'III').replace(/Ⅳ/g, 'IV').replace(/Ⅴ/g, 'V');
+    s = s.replace(/\s+/g, '');
+    return s.toUpperCase();
+}
+
+function extractLevelPartsJS(level) {
+    const norm = normalizeLevelJS(level);
+    if (!norm) return [null, null];
+    const m = norm.match(/^([A-Z0-9]+?)(\d+)$/);
+    if (m) return [m[1], parseInt(m[2], 10)];
+    return [norm, null];
+}
+
+function getWorksheetsPerDayJS(level, subject) {
+    if (!level) return null;
+    const [letterPart] = extractLevelPartsJS(level);
+    if (!letterPart) return null;
+    const subj = (subject || '').toLowerCase();
+    if (subj === 'reading' && ['J','K','L'].includes(letterPart)) return WORKSHEETS_PER_DAY_STATIC[`${letterPart}_reading`] || null;
+    if (subj === 'math' && ['J','K','L'].includes(letterPart)) return WORKSHEETS_PER_DAY_STATIC[`${letterPart}_math`] || null;
+    if (subj === 'math' && ['6A','5A','4A','3A','2A'].includes(letterPart)) return WORKSHEETS_PER_DAY_STATIC[`${letterPart}_math`] || null;
+    return WORKSHEETS_PER_DAY_STATIC[letterPart] || null;
+}
+
+function parseDateMDY(dateStr) {
+    if (!dateStr) return null;
+    const parts = String(dateStr).split('/');
+    if (parts.length !== 3) return null;
+    const [m, d, y] = parts.map(p => parseInt(p, 10));
+    if (!m || !d || !y) return null;
+    return new Date(y, m - 1, d);
+}
+
+function businessDaysInclusive(startDate, endDate) {
+    if (!startDate || !endDate) return null;
+    if (endDate < startDate) return null;
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const totalDays = Math.floor((endDate - startDate) / msPerDay) + 1;
+    const weeks = Math.floor(totalDays / 7);
+    const extra = totalDays % 7;
+    let business = weeks * 5;
+    let startWeekday = startDate.getDay(); // Sunday=0
+    for (let i = 0; i < extra; i++) {
+        const day = (startWeekday + i) % 7;
+        if (day !== 0 && day !== 6) business += 1;
+    }
+    return business;
+}
+
+function getColorClass(actual, target) {
+    if (actual == null || target == null || target === 0) return '';
+    const pct = (actual / target) * 100;
+    if (pct >= 80) return 'bg-success bg-opacity-10';
+    if (pct >= 50) return 'bg-warning bg-opacity-10';
+    return 'bg-danger bg-opacity-10';
+}
+
 function openEmailModal() {
     const select = document.getElementById('studentSelect');
     const studentName = select.value;
@@ -455,17 +529,52 @@ function openEmailModal() {
     // Update modal with student info
     document.getElementById('modalStudentName').textContent = studentName;
     
+    // Fetch and auto-populate email from database
+    fetch('/api/utilities/get-student-email-by-name', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ full_name: studentName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.email) {
+            document.getElementById('recipientEmail').value = data.email;
+        } else {
+            // If no email found, clear the field
+            document.getElementById('recipientEmail').value = '';
+            console.log('No email found for student:', data.error || 'No match');
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching student email:', error);
+        document.getElementById('recipientEmail').value = '';
+    });
+    
     // Build report summary
     const summaryBody = document.getElementById('modalReportSummary');
     summaryBody.innerHTML = '';
     
     studentRecords.forEach(record => {
+        const subj = record.subject || 'N/A';
+        const startDate = parseDateMDY(record.start_date);
+        const endDate = parseDateMDY(record.end_date);
+        const bizDays = businessDaysInclusive(startDate, endDate);
+        const wpd = getWorksheetsPerDayJS(record.highest_ws_completed, subj);
+        const target = (bizDays != null && wpd != null) ? (bizDays * wpd) : 'N/A';
+        const numWS = parseInt(record.num_ws, 10) || null;
+        const studyDays = parseInt(record.study_days, 10) || null;
+        const wsClass = getColorClass(numWS, target);
+        const sdClass = getColorClass(studyDays, bizDays);
+
         summaryBody.innerHTML += `
-            <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${record.subject || 'N/A'}</td></tr>
+            <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${subj}</td></tr>
             <tr><td class="fw-bold">Report Date Range:</td><td>${(record.start_date || 'N/A')} to ${(record.end_date || 'N/A')}</td></tr>
-            <tr><td class="fw-bold" style="width: 50%;">Highest Worksheet Completed:</td><td>${record.highest_ws_completed || 'N/A'}</td></tr>
-            <tr><td class="fw-bold">Number of Worksheets:</td><td>${record.num_ws || 'N/A'}</td></tr>
-            <tr><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
+            <tr><td class="fw-bold" style="width: 50%;">Target # Worksheets:</td><td>${target}</td></tr>
+            <tr class="${wsClass}"><td class="fw-bold">Number Of Worksheets Completed:</td><td>${record.num_ws || 'N/A'}</td></tr>
+            <tr><td class="fw-bold">Study Period:</td><td>${bizDays || 'N/A'}</td></tr>
+            <tr class="${sdClass}"><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
             <tr><td class="fw-bold">Cumulative Study Time:</td><td>${record.cum_study_time || 'N/A'}</td></tr>
             <tr><td class="fw-bold">Current Subject Status:</td><td>${record.current_subject_status || 'N/A'}</td></tr>
         `;
