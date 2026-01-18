@@ -68,7 +68,7 @@ def register_api_routes(app):
                 "active": s[7] if len(s) > 7 else 0,
                 "book_loaned": s[8] if len(s) > 8 else 0,
                 "paper_ws": s[9] if len(s) > 9 else 0,
-                "has_active_loan": s[10] if len(s) > 10 else 0,
+                "has_active_loan": s[14] if len(s) > 14 else 0,
                 "status": status,
                 "start_time": start_time,
                 "total_seconds": total_seconds,
@@ -157,6 +157,7 @@ def register_api_routes(app):
         """Toggle a student's session: start if not active, stop if active.
         Request JSON: {"student_id": <id>}
         Returns: {"action": "started"|"checked_out", "student_id": <id>, "name": <name>}
+        Validation: Student must have at least one goal (Math or Reading) to start session.
         """
         try:
             data = request.get_json() or {}
@@ -170,7 +171,21 @@ def register_api_routes(app):
             if not student:
                 return jsonify({"error": "Student not found"}), 404
             
-            student_name = student[1]  # name is second field
+            student_name = student[1]  # name is at index 1
+            # Get goals from student tuple: indices after removal of 'level' field
+            # Tuple: (id, name, subject, email, phone, photo, active, book_loaned, paper_ws, math_goal, math_worksheets_per_week, reading_goal, reading_worksheets_per_week)
+            math_goal = student[9] if len(student) > 9 else None
+            reading_goal = student[11] if len(student) > 11 else None
+            
+            # Check if student has goals (both goals cannot be blank)
+            # A goal is "filled" if it's not None and has non-whitespace text
+            math_filled = bool(math_goal and str(math_goal).strip())
+            reading_filled = bool(reading_goal and str(reading_goal).strip())
+            
+            if not (math_filled or reading_filled):
+                return jsonify({
+                    "error": f"⚠️ {student_name} cannot start a session. Math Goal and Reading Goal are both blank. Please set at least one goal (Math or Reading)."
+                }), 400
             
             # Check if student has an open session
             with sqlite3.connect(DB_PATH) as conn:

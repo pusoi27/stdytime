@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-2">Broadcast WhatsApp Messages</h1>
+            <p class="text-muted">Send the same WhatsApp message to multiple students or staff members at once.</p>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-10 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <form id="broadcastForm">
+                        <div class="mb-3">
+                            <label class="form-label">Recipient Type</label>
+                            <div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="recipientType" id="typeStudents" value="students" checked>
+                                    <label class="form-check-label" for="typeStudents">Students</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="radio" name="recipientType" id="typeStaff" value="staff">
+                                    <label class="form-check-label" for="typeStaff">Staff</label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="recipientList" class="form-label">Select Recipients</label>
+                            <select class="form-select" id="recipientList" multiple required style="height: 250px;">
+                                <!-- Options will be populated via JavaScript -->
+                            </select>
+                            <small class="form-text text-muted d-block mt-2">
+                                Hold Ctrl (or Cmd on Mac) and click to select multiple recipients
+                            </small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Recipients Summary</label>
+                            <div class="alert alert-light border" id="summaryBox">
+                                <small id="summaryText" class="text-muted">No recipients selected</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="messageText" class="form-label">Message</label>
+                            <textarea class="form-control" id="messageText" rows="6" placeholder="Type your message..." required></textarea>
+                            <small class="form-text text-muted d-block mt-2">
+                                <span id="charCount">0</span>/160 characters
+                            </small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-success w-100">
+                            <span class="spinner-border spinner-border-sm d-none me-2" id="loadingSpinner"></span>
+                            Send Broadcast
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div id="resultAlert" style="display:none;" class="alert mt-4">
+                <div id="resultMessage"></div>
+                <div id="resultDetails" style="display:none;" class="mt-3">
+                    <h6>Delivery Details:</h6>
+                    <div id="deliveryList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const typeStudents = document.getElementById('typeStudents');
+    const typeStaff = document.getElementById('typeStaff');
+    const recipientList = document.getElementById('recipientList');
+    const summaryText = document.getElementById('summaryText');
+    const messageText = document.getElementById('messageText');
+    const charCount = document.getElementById('charCount');
+    const form = document.getElementById('broadcastForm');
+    const resultAlert = document.getElementById('resultAlert');
+    const resultMessage = document.getElementById('resultMessage');
+    const resultDetails = document.getElementById('resultDetails');
+    const deliveryList = document.getElementById('deliveryList');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    
+    let studentsData = [];
+    let staffData = [];
+    
+    // Load recipients on page load
+    document.addEventListener('DOMContentLoaded', async function() {
+        await loadStudents();
+        await loadStaff();
+        updateRecipientList();
+    });
+    
+    // Recipient type change
+    document.querySelectorAll('input[name="recipientType"]').forEach(radio => {
+        radio.addEventListener('change', updateRecipientList);
+    });
+    
+    // Character counter
+    messageText.addEventListener('input', function() {
+        charCount.textContent = this.value.length;
+    });
+    
+    // Update recipient list when selection changes
+    recipientList.addEventListener('change', updateSummary);
+    
+    async function loadStudents() {
+        try {
+            // This would ideally come from an API endpoint, for now we'll use the server-side data
+            // In a real scenario, you'd fetch from /api/students
+            studentsData = window.studentsList || [];
+        } catch (error) {
+            console.error('Error loading students:', error);
+        }
+    }
+    
+    async function loadStaff() {
+        try {
+            staffData = window.staffList || [];
+        } catch (error) {
+            console.error('Error loading staff:', error);
+        }
+    }
+    
+    function updateRecipientList() {
+        recipientList.innerHTML = '';
+        const type = document.querySelector('input[name="recipientType"]:checked').value;
+        const data = type === 'students' ? studentsData : staffData;
+        
+        data.forEach((person, index) => {
+            const option = document.createElement('option');
+            option.value = person.id;
+            option.textContent = `${person.name} - WhatsApp: ${person.whatsapp || 'Not set'}`;
+            option.dataset.whatsapp = person.whatsapp || '';
+            
+            if (!person.whatsapp) {
+                option.disabled = true;
+                option.textContent += ' ❌';
+            }
+            
+            recipientList.appendChild(option);
+        });
+        
+        updateSummary();
+    }
+    
+    function updateSummary() {
+        const selected = Array.from(recipientList.selectedOptions);
+        const withoutWhatsApp = selected.filter(opt => !opt.dataset.whatsapp).length;
+        
+        if (selected.length === 0) {
+            summaryText.textContent = 'No recipients selected';
+        } else {
+            const withWhatsApp = selected.length - withoutWhatsApp;
+            let summary = `${selected.length} recipient(s) selected`;
+            if (withoutWhatsApp > 0) {
+                summary += ` (⚠️ ${withoutWhatsApp} without WhatsApp number)`;
+            }
+            summaryText.textContent = summary;
+        }
+    }
+    
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const message = messageText.value.trim();
+        const selectedOptions = Array.from(recipientList.selectedOptions);
+        const selectedIds = selectedOptions.map(opt => opt.value);
+        const withoutWhatsApp = selectedOptions.filter(opt => !opt.dataset.whatsapp);
+        
+        if (!message) {
+            showResult('error', 'Please enter a message.');
+            return;
+        }
+        
+        if (selectedIds.length === 0) {
+            showResult('error', 'Please select at least one recipient.');
+            return;
+        }
+        
+        if (withoutWhatsApp.length > 0) {
+            showResult('error', `${withoutWhatsApp.length} selected recipient(s) do not have a WhatsApp number.`);
+            return;
+        }
+        
+        loadingSpinner.classList.remove('d-none');
+        
+        const recipientType = document.querySelector('input[name="recipientType"]:checked').value;
+        const endpoint = recipientType === 'students' ? '/api/whatsapp/broadcast-students' : '/api/whatsapp/broadcast-staff';
+        const paramName = recipientType === 'students' ? 'student_ids' : 'staff_ids';
+        
+        try {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    [paramName]: selectedIds,
+                    message: message
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showResult('success', 
+                    `Broadcast complete! Sent: ${data.total_sent}, Failed: ${data.total_failed}`);
+                
+                if (data.results && data.results.length > 0) {
+                    displayDeliveryDetails(data.results);
+                }
+                
+                messageText.value = '';
+                charCount.textContent = '0';
+                recipientList.value = '';
+                updateSummary();
+            } else {
+                showResult('error', data.error || 'Failed to send broadcast.');
+            }
+        } catch (error) {
+            showResult('error', `Error: ${error.message}`);
+        } finally {
+            loadingSpinner.classList.add('d-none');
+        }
+    });
+    
+    function displayDeliveryDetails(results) {
+        resultDetails.style.display = 'block';
+        deliveryList.innerHTML = '';
+        
+        results.forEach(result => {
+            const div = document.createElement('div');
+            div.className = `alert alert-${result.success ? 'success' : 'warning'} py-2`;
+            div.innerHTML = `
+                <strong>${result.name}</strong> 
+                ${result.success ? '✓ Sent' : '✗ Failed: ' + (result.error || 'Unknown error')}
+            `;
+            deliveryList.appendChild(div);
+        });
+    }
+    
+    function showResult(type, message) {
+        resultAlert.className = `alert alert-${type === 'success' ? 'success' : 'danger'}`;
+        resultMessage.textContent = message;
+        resultAlert.style.display = 'block';
+        resultDetails.style.display = 'none';
+    }
+</script>
+
+<!-- Make data available to JavaScript -->
+<script>
+    // Mock data for now - in a real scenario, these would be fetched from the server
+    window.studentsList = [];
+    window.staffList = [];
+</script>
+{% endblock %}

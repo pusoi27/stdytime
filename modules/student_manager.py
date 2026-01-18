@@ -53,7 +53,7 @@ def get_all_students():
         if has_photo:
             # Include flags for loaned book and paper worksheet, plus active book loan count
             c.execute("""
-                SELECT s.id, s.name, s.subject, s.email, s.phone, s.photo, s.active, s.book_loaned, s.paper_ws,
+                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.photo, s.active, s.book_loaned, s.paper_ws,
                        s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
                        (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
                 FROM students s
@@ -63,14 +63,14 @@ def get_all_students():
         else:
             # Fallback if photo column is missing (migration not yet applied)
             c.execute("""
-                SELECT s.id, s.name, s.subject, s.email, s.phone, s.active, s.book_loaned, s.paper_ws,
+                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.active, s.book_loaned, s.paper_ws,
                        (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
                 FROM students s
                 ORDER BY s.name
             """)
             rows = c.fetchall()
-            # Return a consistent tuple shape where index 5 is `photo` (None if missing)
-            return [(r[0], r[1], r[2], r[3], r[4], None, r[5], r[6], r[7], None, 0, None, 0, r[8]) for r in rows]
+            # Return a consistent tuple shape where index 6 is `photo` (None if missing)
+            return [(r[0], r[1], r[2], r[3], r[4], r[5], None, r[6], r[7], r[8], None, 0, None, 0, r[9]) for r in rows]
 
 
 def get_student(student_id):

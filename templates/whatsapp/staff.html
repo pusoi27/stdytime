@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-2">Send WhatsApp to Staff</h1>
+            <p class="text-muted">Select a staff member and send a WhatsApp message directly to their registered number.</p>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-body">
+                    <form id="sendWhatsAppForm">
+                        <div class="mb-3">
+                            <label for="staffSelect" class="form-label">Select Staff Member</label>
+                            <select class="form-select" id="staffSelect" required>
+                                <option value="">-- Choose a staff member --</option>
+                                {% for staff_member in staff %}
+                                <option value="{{ staff_member[0] }}" data-name="{{ staff_member[1] }}" data-whatsapp="{{ staff_member[3] if staff_member[3] else 'Not set' }}">
+                                    {{ staff_member[1] }} ({{ staff_member[2] if staff_member[2] else 'N/A' }}) - WhatsApp: {{ staff_member[3] if staff_member[3] else '❌ Not set' }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted d-block mt-1">
+                                Staff members without a WhatsApp number must update their profile first.
+                            </small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="whatsappDisplay" class="form-label">WhatsApp Number</label>
+                            <input type="text" class="form-control" id="whatsappDisplay" readonly placeholder="Select a staff member">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="updateWhatsApp" class="form-label">
+                                <input type="checkbox" id="updateWhatsApp"> Update WhatsApp Number
+                            </label>
+                            <input type="tel" class="form-control" id="whatsappInput" style="display:none;" placeholder="e.g., +1234567890">
+                            <small class="form-text text-muted">Include country code (e.g., +1 for USA)</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="messageText" class="form-label">Message</label>
+                            <textarea class="form-control" id="messageText" rows="5" placeholder="Type your message..." required></textarea>
+                            <small class="form-text text-muted"><span id="charCount">0</span>/160 characters</small>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">
+                            <span class="spinner-border spinner-border-sm d-none me-2" id="loadingSpinner"></span>
+                            Send WhatsApp
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div id="resultAlert" style="display:none;" class="alert mt-3">
+                <div id="resultMessage"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const staffSelect = document.getElementById('staffSelect');
+    const whatsappDisplay = document.getElementById('whatsappDisplay');
+    const updateCheckbox = document.getElementById('updateWhatsApp');
+    const whatsappInput = document.getElementById('whatsappInput');
+    const messageText = document.getElementById('messageText');
+    const charCount = document.getElementById('charCount');
+    const form = document.getElementById('sendWhatsAppForm');
+    const resultAlert = document.getElementById('resultAlert');
+    const resultMessage = document.getElementById('resultMessage');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    
+    // Update WhatsApp display when staff changes
+    staffSelect.addEventListener('change', function() {
+        const option = this.options[this.selectedIndex];
+        whatsappDisplay.value = option.dataset.whatsapp || '';
+        whatsappInput.value = '';
+        updateCheckbox.checked = false;
+        whatsappInput.style.display = 'none';
+    });
+    
+    // Toggle WhatsApp input field
+    updateCheckbox.addEventListener('change', function() {
+        whatsappInput.style.display = this.checked ? 'block' : 'none';
+        if (this.checked) {
+            whatsappInput.focus();
+        }
+    });
+    
+    // Character counter
+    messageText.addEventListener('input', function() {
+        charCount.textContent = this.value.length;
+    });
+    
+    // Form submission
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const staffId = staffSelect.value;
+        const message = messageText.value.trim();
+        let whatsapp = whatsappDisplay.value;
+        
+        if (!staffId) {
+            showResult('error', 'Please select a staff member.');
+            return;
+        }
+        
+        if (!message) {
+            showResult('error', 'Please enter a message.');
+            return;
+        }
+        
+        // Update WhatsApp if checkbox is checked
+        if (updateCheckbox.checked) {
+            const newWhatsApp = whatsappInput.value.trim();
+            if (!newWhatsApp) {
+                showResult('error', 'Please enter a WhatsApp number.');
+                return;
+            }
+            
+            const updateResult = await updateStaffWhatsApp(staffId, newWhatsApp);
+            if (!updateResult.success) {
+                showResult('error', updateResult.error || 'Failed to update WhatsApp number.');
+                return;
+            }
+            whatsapp = newWhatsApp;
+        }
+        
+        if (!whatsapp || whatsapp === 'Not set') {
+            showResult('error', 'Staff member does not have a WhatsApp number. Please update it first.');
+            return;
+        }
+        
+        loadingSpinner.classList.remove('d-none');
+        
+        try {
+            const response = await fetch('/api/whatsapp/send-to-staff', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    staff_id: staffId,
+                    message: message
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showResult('success', `Message sent successfully! (ID: ${data.message_sid})`);
+                messageText.value = '';
+                charCount.textContent = '0';
+                updateCheckbox.checked = false;
+                whatsappInput.style.display = 'none';
+            } else {
+                showResult('error', data.error || 'Failed to send message.');
+            }
+        } catch (error) {
+            showResult('error', `Error: ${error.message}`);
+        } finally {
+            loadingSpinner.classList.add('d-none');
+        }
+    });
+    
+    async function updateStaffWhatsApp(staffId, whatsapp) {
+        try {
+            const response = await fetch('/api/whatsapp/update-staff-whatsapp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    staff_id: staffId,
+                    whatsapp: whatsapp
+                })
+            });
+            
+            return await response.json();
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    function showResult(type, message) {
+        resultAlert.className = `alert alert-${type === 'success' ? 'success' : 'danger'} mt-3`;
+        resultMessage.textContent = message;
+        resultAlert.style.display = 'block';
+    }
+</script>
+{% endblock %}

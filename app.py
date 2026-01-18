@@ -132,6 +132,7 @@ from routes.qr import register_qr_routes
 from routes.reports import register_reports_routes
 from routes.books import register_book_routes
 from routes.instructor_profile import register_instructor_profile_routes
+from routes.whatsapp import register_whatsapp_routes
 
 # Register scanner route
 @app.route('/qr/scanner')
@@ -150,6 +151,7 @@ register_api_routes(app)
 register_qr_routes(app)
 register_reports_routes(app)
 register_book_routes(app)
+register_whatsapp_routes(app)
 
 # Register utilities routes
 from routes.utilities import register_utilities_routes

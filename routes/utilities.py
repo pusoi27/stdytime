@@ -176,7 +176,7 @@ def register_utilities_routes(app):
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT id, name, email 
+                SELECT id, name, email, math_ws_per_week, reading_ws_per_week
                 FROM students 
                 WHERE LOWER(SUBSTR(name, 1, INSTR(name || ' ', ' ') - 1)) = ?
                 ORDER BY name
@@ -192,14 +192,16 @@ def register_utilities_routes(app):
                 })
             
             # If multiple matches, return the first one (or could return all for user to choose)
-            student_id, student_name, student_email = matches[0]
+            student_id, student_name, student_email, student_math_ws_per_week, student_reading_ws_per_week = matches[0]
             
             return jsonify({
                 'success': True,
                 'student_id': student_id,
                 'student_name': student_name,
                 'email': student_email or '',
-                'matches_count': len(matches)
+                'matches_count': len(matches),
+                'math_ws_per_week': student_math_ws_per_week,
+                'reading_ws_per_week': student_reading_ws_per_week
             })
             
         except Exception as e:
@@ -370,6 +372,14 @@ def register_utilities_routes(app):
                         return lower_map[key.lower()]
                 return None
 
+            def zero_if_missing(val):
+                """Return 0 when value is None/empty, else original."""
+                if val is None:
+                    return 0
+                if isinstance(val, str) and val.strip() == '':
+                    return 0
+                return val
+
             structured_rows = []
 
             token = session.get('report_card_token')
@@ -401,9 +411,9 @@ def register_utilities_routes(app):
                         'subject': subject_label or filename,
                         'full_name': get_field(record, ['Full Name', 'Student Name', 'Name']) or '',
                         'highest_ws_completed': get_field(record, ['Highest WS Completed', 'Highest WS Completed This Month']) or '',
-                        'num_ws': get_field(record, ['# of WS', 'Number of Worksheets']) or '',
-                        'study_days': get_field(record, ['# of Study Days', 'Study Days']) or '',
-                        'cum_study_time': get_field(record, ['Cum. Study Time', 'Cumulative Study Time']) or '',
+                        'num_ws': zero_if_missing(get_field(record, ['# of WS', 'Number of Worksheets'])),
+                        'study_days': zero_if_missing(get_field(record, ['# of Study Days', 'Study Days'])),
+                        'cum_study_time': zero_if_missing(get_field(record, ['Cum. Study Time', 'Cumulative Study Time'])),
                         'current_subject_status': status_str or '',
                         'start_date': (report_dates or {}).get('start_date') if report_dates else None,
                         'end_date': (report_dates or {}).get('end_date') if report_dates else None
@@ -550,6 +560,7 @@ def register_utilities_routes(app):
                 return jsonify({'success': False, 'error': 'No data provided'}), 400
             
             student_name = data.get('student_name')
+            student_id = data.get('student_id')  # Get student ID to fetch ws_per_week values
             recipient_email = data.get('recipient_email')
             instructor_email_from_client = data.get('instructor_email')  # null if checkbox unchecked
             report_data = data.get('report_data', [])
@@ -578,14 +589,43 @@ def register_utilities_routes(app):
             # Get email manager instance
             email_manager = get_email_manager()
             
+            # Get student's ws_per_week values from database if student_id provided
+            def _as_positive_number(val):
+                """Return float value if > 0, else None (handles str/int/float)."""
+                if val is None:
+                    return None
+                try:
+                    num = float(val)
+                    return num if num > 0 else None
+                except (TypeError, ValueError):
+                    return None
+
+            student_math_ws_per_week = None
+            student_reading_ws_per_week = None
+            if student_id:
+                try:
+                    from modules.student_manager import get_student
+                    student = get_student(student_id)
+                    if student:
+                        # Index 10 is math_ws_per_week, index 12 is reading_ws_per_week (from get_student)
+                        student_math_ws_per_week = _as_positive_number(student[10] if len(student) > 10 else None)
+                        student_reading_ws_per_week = _as_positive_number(student[12] if len(student) > 12 else None)
+                        print(f"[send-email] Student {student_id} has math_ws_per_week={student_math_ws_per_week}, reading_ws_per_week={student_reading_ws_per_week}")
+                except Exception as e:
+                    print(f"[send-email] Error loading student data: {e}")
+            
             # Helpers for target worksheet calculation
             def _parse_date(date_str: str):
                 if not date_str:
                     return None
-                try:
-                    return datetime.strptime(str(date_str), "%m/%d/%Y").date()
-                except Exception:
-                    return None
+                candidates = ["%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y", "%m-%d-%y"]
+                s = str(date_str).strip()
+                for fmt in candidates:
+                    try:
+                        return datetime.strptime(s, fmt).date()
+                    except Exception:
+                        continue
+                return None
 
             def _business_days(start_date, end_date):
                 if not start_date or not end_date:
@@ -627,6 +667,13 @@ def register_utilities_routes(app):
                 'subjects': []
             }
 
+            def zero_if_missing(val):
+                if val is None:
+                    return 0
+                if isinstance(val, str) and val.strip() == '':
+                    return 0
+                return val
+
             for record in report_data:
                 subject_name = record.get('subject', 'N/A')
                 highest_ws = record.get('highest_ws_completed')
@@ -634,21 +681,42 @@ def register_utilities_routes(app):
                 end_date_parsed = _parse_date(record.get('end_date'))
                 business_days = _business_days(start_date_parsed, end_date_parsed)
 
-                # Determine worksheets per day from highest worksheet level and subject
-                subj_key = subject_name.lower() if isinstance(subject_name, str) else None
-                worksheets_per_day = get_worksheets_per_day(normalize_level(highest_ws), subject=subj_key)
-
+                # Calculate target worksheets
                 target_ws = None
-                if business_days is not None and worksheets_per_day is not None:
-                    target_ws = business_days * worksheets_per_day
+                
+                # First, try to use student's ws_per_week values from database
+                if business_days is not None:
+                    weeks = business_days / 5.0  # 5 business days per week
+                    
+                    # Determine which ws_per_week to use based on subject
+                    math_ws = _as_positive_number(student_math_ws_per_week)
+                    reading_ws = _as_positive_number(student_reading_ws_per_week)
+
+                    if subject_name and 'math' in subject_name.lower() and math_ws:
+                        target_ws = int(weeks * math_ws)
+                        print(f"[send-email] Using student math_ws_per_week: {weeks} weeks * {math_ws} = {target_ws}")
+                    elif subject_name and 'reading' in subject_name.lower() and reading_ws:
+                        target_ws = int(weeks * reading_ws)
+                        print(f"[send-email] Using student reading_ws_per_week: {weeks} weeks * {reading_ws} = {target_ws}")
+                    elif math_ws:
+                        # Default to math ws/week if subject unclear but value exists
+                        target_ws = int(weeks * math_ws)
+                        print(f"[send-email] Using student math_ws_per_week (default): {weeks} weeks * {math_ws} = {target_ws}")
+                    else:
+                        # Fall back to default calculation based on worksheet level
+                        subj_key = subject_name.lower() if isinstance(subject_name, str) else None
+                        worksheets_per_day = get_worksheets_per_day(normalize_level(highest_ws), subject=subj_key)
+                        if worksheets_per_day is not None:
+                            target_ws = int(business_days * worksheets_per_day)  # Round down to integer
+                            print(f"[send-email] Using default calculation: {business_days} days * {worksheets_per_day} = {target_ws}")
 
                 combined_report['subjects'].append({
                     'subject': subject_name,
                     'target_ws': target_ws if target_ws is not None else 'N/A',
-                    'num_ws': record.get('num_ws', 'N/A'),
+                    'num_ws': zero_if_missing(record.get('num_ws', 'N/A')),
                     'study_period': business_days if business_days is not None else 'N/A',
-                    'study_days': record.get('study_days', 'N/A'),
-                    'cum_study_time': record.get('cum_study_time', 'N/A'),
+                    'study_days': zero_if_missing(record.get('study_days', 'N/A')),
+                    'cum_study_time': zero_if_missing(record.get('cum_study_time', 'N/A')),
                     'current_subject_status': record.get('current_subject_status', 'N/A'),
                     'start_date': record.get('start_date'),
                     'end_date': record.get('end_date')

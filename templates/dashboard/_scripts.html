@@ -237,8 +237,12 @@ function buildStudentList(data){
         img.src = candidates[0];
       }
       const info=document.createElement('div'); info.className='flex-fill';
-      const bookLoanBadge = s.has_active_loan ? ' <span class="badge bg-primary" style="font-size:0.7em;">B</span>' : '';
-      info.innerHTML = `<b>${s.name}${bookLoanBadge}</b><br><small class="text-muted">${s.subject} · ${s.level}</small>`;
+      const badges = [];
+      if (s.subject) badges.push(s.subject);
+      if (s.has_active_loan) badges.push('B');
+      if (s.paper_ws) badges.push('P');
+      const badgeDisplay = badges.length > 0 ? badges.join(', ') : '-';
+      info.innerHTML = `<b>${s.name}</b><br><small class="text-muted">${badgeDisplay}</small>`;
       div.appendChild(img);
       div.appendChild(info);
       div.onclick=async()=>{
@@ -269,7 +273,10 @@ function buildSeatGrid(activeSessions){
       const start=new Date((s.start_time||"").replace(/\u202f|\u2009/g," "));
       const limit=DURATION_LIMITS[s.subject]||1800;
       const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
-      const badges = [s.subject];
+      const badges = [];
+      if (s.subject) {  // Only add subject badge if subject is not empty
+        badges.push(s.subject);
+      }
       if (s.book_loaned) {
         badges.push('B');
       }

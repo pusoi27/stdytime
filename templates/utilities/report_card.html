@@ -39,9 +39,12 @@
                                 <option value="">-- Select a student --</option>
                             </select>
                         </div>
-                        <div class="col-md-6 d-flex align-items-end">
+                        <div class="col-md-6 d-flex align-items-end flex-wrap gap-2 justify-content-end">
                             <button class="btn btn-success btn-lg" onclick="openEmailModal()" id="emailButton" disabled>
                                 <i class="bi bi-envelope-fill"></i> Email Report
+                            </button>
+                            <button class="btn btn-outline-primary btn-lg" onclick="emailAllStudents()" id="emailAllButton" disabled>
+                                <i class="bi bi-send-fill"></i> Email All Students
                             </button>
                         </div>
                     </div>
@@ -161,7 +164,7 @@
                     <div class="form-text">Enter the email address where the report should be sent.</div>
                 </div>
                 <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="sendToInstructorEmail" checked>
+                    <input type="checkbox" class="form-check-input" id="sendToInstructorEmail">
                     <label class="form-check-label" for="sendToInstructorEmail">
                         <strong>Also send to Instructor email</strong>
                         <span id="instructorEmailDisplay" class="text-muted ms-2"></span>
@@ -194,6 +197,11 @@
 <script>
 // Preload instructor email into JS from context processor (may be empty)
 window.INSTRUCTOR_EMAIL = "{{ instructor_email or '' }}";
+
+// Track selected student metadata for email/target calculations
+let selectedStudentId = null;
+let selectedStudentMathWsPerWeek = null;
+let selectedStudentReadingWsPerWeek = null;
 
 // Track loaded files
 let loadedFiles = {
@@ -369,6 +377,8 @@ function refreshReportTable() {
                 document.getElementById('rowCount').textContent = '';
                 document.getElementById('reportTableWrapper').style.display = 'block';
                 document.getElementById('noDataMessage').style.display = 'block';
+                const allBtn = document.getElementById('emailAllButton');
+                if (allBtn) allBtn.disabled = true;
                 return;
             }
 
@@ -426,6 +436,8 @@ function populateStudentDropdown(students) {
     // Show email section if we have students
     if (Object.keys(uniqueStudents).length > 0) {
         document.getElementById('emailSection').style.display = 'block';
+        const allBtn = document.getElementById('emailAllButton');
+        if (allBtn) allBtn.disabled = false;
     }
 }
 
@@ -483,11 +495,25 @@ function getWorksheetsPerDayJS(level, subject) {
 
 function parseDateMDY(dateStr) {
     if (!dateStr) return null;
-    const parts = String(dateStr).split('/');
-    if (parts.length !== 3) return null;
-    const [m, d, y] = parts.map(p => parseInt(p, 10));
-    if (!m || !d || !y) return null;
-    return new Date(y, m - 1, d);
+    const s = String(dateStr).trim();
+    const candidates = [
+        (str) => str.split('/'),
+        (str) => str.split('-')
+    ];
+    for (const splitter of candidates) {
+        const parts = splitter(s);
+        if (parts.length !== 3) continue;
+        const [a, b, c] = parts.map(p => parseInt(p, 10));
+        // Heuristic: if first part > 12 and third part <= 31, swap to YYYY-MM-DD
+        let m = a, d = b, y = c;
+        if (m > 12 && c <= 31) {
+            y = a; m = b; d = c;
+        }
+        if (!m || !d || !y) continue;
+        const fullYear = y < 100 ? 2000 + y : y; // handle two-digit years
+        return new Date(fullYear, m - 1, d);
+    }
+    return null;
 }
 
 function businessDaysInclusive(startDate, endDate) {
@@ -523,13 +549,67 @@ function openEmailModal() {
         return;
     }
     
+    // Reset selected student metadata
+    selectedStudentId = null;
+    selectedStudentMathWsPerWeek = null;
+    selectedStudentReadingWsPerWeek = null;
+
     // Get all records for this student
     const studentRecords = currentReportData.filter(s => s.full_name === studentName);
-    
+
     // Update modal with student info
     document.getElementById('modalStudentName').textContent = studentName;
     
     // Fetch and auto-populate email from database
+    const renderSummary = () => {
+        const summaryBody = document.getElementById('modalReportSummary');
+        summaryBody.innerHTML = '';
+
+        const coercePositive = (val) => {
+            if (val === null || val === undefined || val === '') return null;
+            const num = Number(val);
+            return Number.isFinite(num) && num > 0 ? num : null;
+        };
+
+        studentRecords.forEach(record => {
+            const subj = record.subject || 'N/A';
+            const startDate = parseDateMDY(record.start_date);
+            const endDate = parseDateMDY(record.end_date);
+            const bizDays = businessDaysInclusive(startDate, endDate);
+            const wpd = getWorksheetsPerDayJS(record.highest_ws_completed, subj);
+            const subjLower = (subj || '').toLowerCase();
+
+            const mathWsPerWeek = coercePositive(selectedStudentMathWsPerWeek);
+            const readingWsPerWeek = coercePositive(selectedStudentReadingWsPerWeek);
+
+            let target = 'N/A';
+            if (bizDays != null) {
+                if (subjLower.includes('math') && mathWsPerWeek) {
+                    target = Math.floor((bizDays / 5) * mathWsPerWeek);
+                } else if (subjLower.includes('reading') && readingWsPerWeek) {
+                    target = Math.floor((bizDays / 5) * readingWsPerWeek);
+                } else if (wpd != null) {
+                    target = Math.floor(bizDays * wpd);
+                }
+            }
+            const numWS = parseInt(record.num_ws, 10) || null;
+            const studyDays = parseInt(record.study_days, 10) || null;
+            const wsClass = getColorClass(numWS, target);
+            const sdClass = getColorClass(studyDays, bizDays);
+
+            summaryBody.innerHTML += `
+                <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${subj}</td></tr>
+                <tr><td class="fw-bold">Report Date Range:</td><td>${(record.start_date || 'N/A')} to ${(record.end_date || 'N/A')}</td></tr>
+                <tr><td class="fw-bold" style="width: 50%;">Target # Worksheets:</td><td>${target}</td></tr>
+                <tr class="${wsClass}"><td class="fw-bold">Number Of Worksheets Completed:</td><td>${record.num_ws || 'N/A'}</td></tr>
+                <tr><td class="fw-bold">Study Period:</td><td>${bizDays || 'N/A'}</td></tr>
+                <tr class="${sdClass}"><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
+                <tr><td class="fw-bold">Cumulative Study Time:</td><td>${record.cum_study_time || 'N/A'}</td></tr>
+                <tr><td class="fw-bold">Current Subject Status:</td><td>${record.current_subject_status || 'N/A'}</td></tr>
+            `;
+        });
+    };
+
     fetch('/api/utilities/get-student-email-by-name', {
         method: 'POST',
         headers: {
@@ -539,56 +619,37 @@ function openEmailModal() {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success && data.email) {
-            document.getElementById('recipientEmail').value = data.email;
+        if (data && data.success) {
+            selectedStudentId = data.student_id ?? null;
+            selectedStudentMathWsPerWeek = data.math_ws_per_week ?? null;
+            selectedStudentReadingWsPerWeek = data.reading_ws_per_week ?? null;
+            document.getElementById('recipientEmail').value = data.email || '';
         } else {
-            // If no email found, clear the field
+            selectedStudentId = null;
+            selectedStudentMathWsPerWeek = null;
+            selectedStudentReadingWsPerWeek = null;
             document.getElementById('recipientEmail').value = '';
-            console.log('No email found for student:', data.error || 'No match');
+            console.log('No email found for student:', (data && data.error) || 'No match');
         }
+        renderSummary();
     })
     .catch(error => {
         console.error('Error fetching student email:', error);
         document.getElementById('recipientEmail').value = '';
-    });
-    
-    // Build report summary
-    const summaryBody = document.getElementById('modalReportSummary');
-    summaryBody.innerHTML = '';
-    
-    studentRecords.forEach(record => {
-        const subj = record.subject || 'N/A';
-        const startDate = parseDateMDY(record.start_date);
-        const endDate = parseDateMDY(record.end_date);
-        const bizDays = businessDaysInclusive(startDate, endDate);
-        const wpd = getWorksheetsPerDayJS(record.highest_ws_completed, subj);
-        const target = (bizDays != null && wpd != null) ? (bizDays * wpd) : 'N/A';
-        const numWS = parseInt(record.num_ws, 10) || null;
-        const studyDays = parseInt(record.study_days, 10) || null;
-        const wsClass = getColorClass(numWS, target);
-        const sdClass = getColorClass(studyDays, bizDays);
-
-        summaryBody.innerHTML += `
-            <tr class="table-primary"><td colspan="2" class="fw-bold">Subject: ${subj}</td></tr>
-            <tr><td class="fw-bold">Report Date Range:</td><td>${(record.start_date || 'N/A')} to ${(record.end_date || 'N/A')}</td></tr>
-            <tr><td class="fw-bold" style="width: 50%;">Target # Worksheets:</td><td>${target}</td></tr>
-            <tr class="${wsClass}"><td class="fw-bold">Number Of Worksheets Completed:</td><td>${record.num_ws || 'N/A'}</td></tr>
-            <tr><td class="fw-bold">Study Period:</td><td>${bizDays || 'N/A'}</td></tr>
-            <tr class="${sdClass}"><td class="fw-bold">Study Days:</td><td>${record.study_days || 'N/A'}</td></tr>
-            <tr><td class="fw-bold">Cumulative Study Time:</td><td>${record.cum_study_time || 'N/A'}</td></tr>
-            <tr><td class="fw-bold">Current Subject Status:</td><td>${record.current_subject_status || 'N/A'}</td></tr>
-        `;
+        selectedStudentId = null;
+        selectedStudentMathWsPerWeek = null;
+        selectedStudentReadingWsPerWeek = null;
+        renderSummary();
     });
     
     // Clear previous status
     document.getElementById('emailStatusMessage').style.display = 'none';
-    document.getElementById('recipientEmail').value = '';
     
     // Prefer server-preloaded instructor email (avoids fetch issues)
     const preloadedInstructorEmail = (window.INSTRUCTOR_EMAIL || '').trim();
     if (preloadedInstructorEmail) {
         const checkbox = document.getElementById('sendToInstructorEmail');
-        checkbox.checked = true;
+        checkbox.checked = false; // default off
         checkbox.disabled = false;
         checkbox.dataset.email = preloadedInstructorEmail;
         document.getElementById('instructorEmailDisplay').textContent = `(${preloadedInstructorEmail})`;
@@ -606,7 +667,7 @@ function openEmailModal() {
                     const instructorEmail = data.profile.email;
                     if (instructorEmail) {
                         const checkbox = document.getElementById('sendToInstructorEmail');
-                        checkbox.checked = true; // default to sending to instructor
+                        checkbox.checked = false; // default off per request
                         checkbox.disabled = false;
                         checkbox.dataset.email = instructorEmail;
                         document.getElementById('instructorEmailDisplay').textContent = `(${instructorEmail})`;
@@ -668,6 +729,7 @@ function sendReportEmail() {
         },
         body: JSON.stringify({
             student_name: studentName,
+            student_id: selectedStudentId,
             recipient_email: recipientEmail,
             instructor_email: sendToInstructor ? instructorEmail : null,
             report_data: studentRecords
@@ -694,6 +756,90 @@ function sendReportEmail() {
         statusDiv.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i> Error: ' + error.message;
         statusDiv.style.display = 'block';
     });
+}
+
+async function emailAllStudents() {
+    if (!currentReportData || currentReportData.length === 0) {
+        alert('No report data available. Load Math/Reading files first.');
+        return;
+    }
+
+    const grouped = {};
+    currentReportData.forEach(rec => {
+        if (!rec.full_name) return;
+        if (!grouped[rec.full_name]) grouped[rec.full_name] = [];
+        grouped[rec.full_name].push(rec);
+    });
+
+    const studentCount = Object.keys(grouped).length;
+    if (studentCount === 0) {
+        alert('No students available to email.');
+        return;
+    }
+
+    if (!confirm(`Send report emails to ${studentCount} student(s)?`)) {
+        return;
+    }
+
+    const allBtn = document.getElementById('emailAllButton');
+    const originalLabel = allBtn ? allBtn.innerHTML : '';
+    if (allBtn) {
+        allBtn.disabled = true;
+        allBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending...';
+    }
+
+    let successCount = 0;
+    const failures = [];
+
+    for (const [studentName, records] of Object.entries(grouped)) {
+        try {
+            const emailResp = await fetch('/api/utilities/get-student-email-by-name', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_name: studentName })
+            });
+            const emailData = await emailResp.json();
+            const recipientEmail = emailData && emailData.success ? (emailData.email || '') : '';
+            const studentId = emailData && emailData.success ? emailData.student_id : null;
+
+            if (!recipientEmail || !recipientEmail.includes('@')) {
+                failures.push(`${studentName}: missing or invalid email`);
+                continue;
+            }
+
+            const sendResp = await fetch('/api/utilities/report-card/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    student_name: studentName,
+                    student_id: studentId,
+                    recipient_email: recipientEmail,
+                    instructor_email: null, // default off
+                    report_data: records
+                })
+            });
+            const sendData = await sendResp.json();
+            if (sendData && sendData.success) {
+                successCount += 1;
+            } else {
+                failures.push(`${studentName}: ${(sendData && sendData.error) || 'send failed'}`);
+            }
+        } catch (err) {
+            failures.push(`${studentName}: ${err.message}`);
+        }
+    }
+
+    if (allBtn) {
+        allBtn.disabled = false;
+        allBtn.innerHTML = originalLabel;
+    }
+
+    let summary = `Emails sent successfully to ${successCount} of ${studentCount} student(s).`;
+    if (failures.length) {
+        summary += `\nIssues: ${failures.slice(0, 10).join('; ')}`;
+        if (failures.length > 10) summary += ' ...';
+    }
+    alert(summary);
 }
 </script>
 
