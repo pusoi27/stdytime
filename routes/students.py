@@ -31,13 +31,15 @@ def register_student_routes(app, student_photos_static, templates_student_photos
                     pass
             student_manager.add_student(
                 request.form["name"],
-                request.form.get("subject", ""),
-                request.form.get("level", ""),
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
                 filename,
                 book_loaned=int(bool(request.form.get("book_loaned"))),
                 paper_ws=int(bool(request.form.get("paper_ws"))),
+                math_goal=request.form.get("math_goal", ""),
+                math_worksheets_per_week=request.form.get("math_worksheets_per_week", 0),
+                reading_goal=request.form.get("reading_goal", ""),
+                reading_worksheets_per_week=request.form.get("reading_worksheets_per_week", 0),
             )
             flash("Student added successfully.", "success")
             return redirect(url_for("students_list"))
@@ -64,12 +66,15 @@ def register_student_routes(app, student_photos_static, templates_student_photos
             student_manager.update_student(
                 sid,
                 request.form["name"],
-                request.form.get("subject", ""),
-                request.form.get("level", ""),
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
+                subject=request.form.get("subject", ""),
                 book_loaned=int(bool(request.form.get("book_loaned"))),
                 paper_ws=int(bool(request.form.get("paper_ws"))),
+                math_goal=request.form.get("math_goal", ""),
+                math_worksheets_per_week=request.form.get("math_worksheets_per_week", 0),
+                reading_goal=request.form.get("reading_goal", ""),
+                reading_worksheets_per_week=request.form.get("reading_worksheets_per_week", 0),
             )
             flash("Student updated.", "info")
             return redirect(url_for("students_list"))
@@ -89,8 +94,18 @@ def register_student_routes(app, student_photos_static, templates_student_photos
             return redirect(url_for("students_list"))
         path = os.path.join(upload_folder, secure_filename(file.filename))
         file.save(path)
-        added = student_manager.import_csv(path)
-        flash(f"Imported {added} new student(s).", "success")
+        result = student_manager.import_csv(path)
+        added = result.get("added", 0) if isinstance(result, dict) else result
+        updated = result.get("updated", 0) if isinstance(result, dict) else 0
+        deleted = result.get("deleted", 0) if isinstance(result, dict) else 0
+        
+        message = f"Imported {added} new student(s)"
+        if updated > 0:
+            message += f", Updated {updated} student(s)"
+        if deleted > 0:
+            message += f", Deleted {deleted} student(s)"
+        message += "."
+        flash(message, "success")
         return redirect(url_for("students_list"))
 
     @app.route("/students/export")

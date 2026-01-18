@@ -116,7 +116,37 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "photo" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN photo TEXT")
+        if "whatsapp" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN whatsapp TEXT")
+        if "math_goal" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN math_goal TEXT")
+        if "math_worksheets_per_week" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN math_worksheets_per_week INTEGER DEFAULT 0")
+        if "math_ws_per_week" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN math_ws_per_week INTEGER DEFAULT 0")
+        if "reading_goal" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN reading_goal TEXT")
+        if "reading_worksheets_per_week" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN reading_worksheets_per_week INTEGER DEFAULT 0")
+        if "reading_ws_per_week" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN reading_ws_per_week INTEGER DEFAULT 0")
         conn.commit()
+
+    # Ensure `whatsapp` column exists on staff table (migration for WhatsApp contact)
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(staff)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "whatsapp" not in cols:
+            cur.execute("ALTER TABLE staff ADD COLUMN whatsapp TEXT")
+        conn.commit()
+
+    # Recalculate subjects for all students based on their Math and Reading goals
+    from modules import student_manager
+    try:
+        student_manager.recalculate_all_subjects()
+    except Exception as e:
+        print(f"[init_db] Warning: Could not recalculate subjects: {e}")
 
     # Ensure new book columns exist (migration for book inventory management)
     with sqlite3.connect(DB_PATH) as conn:
