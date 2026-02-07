@@ -121,6 +121,73 @@ def inject_dynamic_lists():
     return dict(active_list=active_students_cache, checked_list=checked_out_cache)
 
 
+@app.context_processor
+def inject_app_version():
+    """Inject app version from VERSION file into all templates."""
+    return dict(app_version=_ensure_version_up_to_date())
+
+
+def _bump_patch_version(version):
+    parts = version.split('.')
+    if not parts:
+        return version
+    last = parts[-1]
+    if not last.isdigit():
+        return version
+    width = len(last)
+    bumped = str(int(last) + 1).zfill(width)
+    parts[-1] = bumped
+    return '.'.join(parts)
+
+
+def _find_latest_source_mtime(base_dir):
+    ignore_dirs = {
+        '.venv', '__pycache__', '.git', 'build', 'dist', 'data',
+        'exports', 'uploads', 'assets', 'static', 'templates\\static'
+    }
+    latest = 0.0
+    for root, dirs, files in os.walk(base_dir):
+        rel_root = os.path.relpath(root, base_dir)
+        if rel_root == '.':
+            rel_root = ''
+        rel_parts = rel_root.split(os.sep) if rel_root else []
+        if any(part in ignore_dirs for part in rel_parts):
+            dirs[:] = []
+            continue
+        for fname in files:
+            if fname == 'VERSION':
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                mtime = os.path.getmtime(fpath)
+                if mtime > latest:
+                    latest = mtime
+            except Exception:
+                continue
+    return latest
+
+
+def _ensure_version_up_to_date():
+    version = "06.07.43"
+    vpath = os.path.join(os.path.dirname(__file__), 'VERSION')
+    try:
+        if os.path.exists(vpath):
+            with open(vpath, 'r', encoding='utf-8') as vf:
+                version = (vf.read().strip() or version)
+        latest_mtime = _find_latest_source_mtime(os.path.dirname(__file__))
+        v_mtime = os.path.getmtime(vpath) if os.path.exists(vpath) else 0
+        if latest_mtime > v_mtime:
+            version = _bump_patch_version(version)
+            try:
+                with open(vpath, 'w', encoding='utf-8') as vf:
+                    vf.write(version)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return version
+
+
 # ================================================================
 #  Register all route modules
 # ================================================================

@@ -15,26 +15,6 @@ def _table_has_column(table, column):
     return column in cols
 
 
-def calculate_subject(math_goal, reading_goal):
-    """Calculate subject based on goals: S1 if both goals, S2 if one goal, empty if neither.
-    Goals can be text strings or None. Both must have non-empty text to be considered 'populated'.
-    """
-    # Check if math_goal has actual text content (handles None, empty string, whitespace)
-    math_filled = bool(math_goal and str(math_goal).strip())
-    # Check if reading_goal has actual text content (handles None, empty string, whitespace)
-    reading_filled = bool(reading_goal and str(reading_goal).strip())
-    
-    # If both goals are populated, assign S1
-    if math_filled and reading_filled:
-        return "S1"
-    # If only one goal is populated, assign S2
-    elif math_filled or reading_filled:
-        return "S2"
-    # If neither goal is populated, return empty
-    else:
-        return ""
-
-
 def safe_int(value, default=0):
     """Safely convert value to int, returning default if empty or invalid."""
     try:
@@ -53,8 +33,9 @@ def get_all_students():
         if has_photo:
             # Include flags for loaned book and paper worksheet, plus active book loan count
             c.execute("""
-                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.photo, s.active, s.book_loaned, s.paper_ws,
+                SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.photo, s.active, s.book_loaned, s.paper_ws,
                        s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
+                       s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time,
                        (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
                 FROM students s
                 ORDER BY s.name
@@ -78,64 +59,45 @@ def get_student(student_id):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
-            row = c.execute("SELECT id,name,subject,email,phone,photo,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week FROM students WHERE id=?", (student_id,)).fetchone()
+            row = c.execute("SELECT id,name,subject,email,phone,whatsapp,photo,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time FROM students WHERE id=?", (student_id,)).fetchone()
             return row
         else:
-            row = c.execute("SELECT id,name,subject,email,phone,active,book_loaned,paper_ws FROM students WHERE id=?", (student_id,)).fetchone()
+            row = c.execute("SELECT id,name,subject,email,phone,whatsapp,active,book_loaned,paper_ws FROM students WHERE id=?", (student_id,)).fetchone()
             if not row:
                 return None
             # Insert None for photo and default new columns to keep tuple shape
-            return (row[0], row[1], row[2], row[3], row[4], None, row[5], row[6], row[7], None, 0, None, 0)
+            return (row[0], row[1], row[2], row[3], row[4], row[5], None, row[6], row[7], row[8], None, 0, None, 0)
 
 
-def add_student(name, email, phone, photo=None, book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0):
+def add_student(name, subject, email, phone, whatsapp="", photo=None, book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time=""):
     has_photo = _table_has_column("students", "photo")
-    subject = calculate_subject(math_goal, reading_goal)
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if has_photo:
             c.execute("""INSERT INTO students
-                (name,subject,email,phone,photo,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week)
-                VALUES (?,?,?,?,?,1,?,?,?,?,?,?)""",
-                (name, subject, email, phone, photo, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week)))
+                (name,subject,email,phone,whatsapp,photo,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time)
+                VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (name, subject, email, phone, whatsapp, photo, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week), int(bool(el)), int(bool(pi)), int(bool(v)), day1, day2, day1_time, day2_time))
         else:
             c.execute("""INSERT INTO students
-                (name,subject,email,phone,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week)
-                VALUES (?,?,?,?,1,?,?,?,?,?,?)""",
-                (name, subject, email, phone, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week)))
+                (name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week)
+                VALUES (?,?,?,?,?,1,?,?,?,?,?,?)""",
+                (name, subject, email, phone, whatsapp, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week)))
         conn.commit()
 
 
-def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0):
+def update_student(sid, name, email, phone, whatsapp="", subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, photo=None, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time=""):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=? WHERE id=?""",
-                  (name,subject,email,phone,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),sid))
+        if photo:
+            # If photo is provided, include it in the update
+            c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,whatsapp=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,photo=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=?""",
+                      (name,subject,email,phone,whatsapp,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),photo,int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid))
+        else:
+            # If no photo, update all other fields
+            c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,whatsapp=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=?""",
+                      (name,subject,email,phone,whatsapp,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid))
         conn.commit()
-
-
-def recalculate_all_subjects():
-    """Recalculate and update subject for all students based on their Math and Reading goals.
-    Subject assignment:
-    - S2 if both Math AND Reading goals are populated
-    - S1 if only one goal is populated
-    - Empty string if both goals are blank
-    """
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        # Get all students with their goals
-        c.execute("SELECT id, math_goal, reading_goal FROM students")
-        students = c.fetchall()
-        
-        updated_count = 0
-        for student_id, math_goal, reading_goal in students:
-            new_subject = calculate_subject(math_goal, reading_goal)
-            c.execute("UPDATE students SET subject=? WHERE id=?", (new_subject, student_id))
-            updated_count += 1
-        
-        conn.commit()
-    
-    return updated_count
 
 
 def delete_student(sid):
@@ -179,9 +141,8 @@ def import_csv(file_path):
             reading_ws=safe_int(row.get("Reading/WS") or row.get("reading/ws") or "0", default=0)
             print(f"Student: {name}, Math/WS: {math_ws}, Reading/WS: {reading_ws}")
             
-            # If subject not provided, calculate from goals
-            if not subject.strip():
-                subject=calculate_subject(math_goal, reading_goal)
+            if subject.strip() not in {"S1", "S2"}:
+                return {"error": "CSV import failed: subject must be S1 or S2 for every student."}
             
             # Check if student exists
             student_record=conn.execute("SELECT id FROM students WHERE LOWER(TRIM(name))=LOWER(?)",(name.strip(),)).fetchone()

@@ -32,8 +32,38 @@
                             <p class="fs-5 fw-semibold">{{ profile.name }}</p>
                         </div>
                         <div class="col-md-6">
-                            <h6 class="text-muted mb-1">Center Location</h6>
+                            <h6 class="text-muted mb-1">Center Name</h6>
                             <p class="fs-5 fw-semibold">{{ profile.center_location or 'Not specified' }}</p>
+                        </div>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <h6 class="text-muted mb-1">Center Address</h6>
+                            <p class="fs-5 fw-semibold">{{ profile.center_address or 'Not specified' }}</p>
+                        </div>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <h6 class="text-muted mb-3">Class Hours</h6>
+                            <table class="table table-sm table-borderless">
+                                <tbody>
+                                    {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+                                    {% for day, day_key in days %}
+                                    <tr>
+                                        <td class="fw-semibold">{{ day }}</td>
+                                        <td>
+                                            {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+                                                {{ profile[day_key + '_start'] }} - {{ profile[day_key + '_end'] }}
+                                            {% else %}
+                                                <span class="text-muted">Closed</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 

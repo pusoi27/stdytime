@@ -6,7 +6,7 @@
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
-    <span class="text-white-50 small">Version 06.07.00</span>
+    <span class="text-white-50 small">Version {{ app_version }}</span>
 
     <!-- Toggler -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -64,6 +64,7 @@
   <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-workspace"></i> Instructor</a>
   <ul class="dropdown-menu" aria-labelledby="instMenu">
     <li><a class="dropdown-item" href="{{ url_for('instructor_profile') }}">Profile</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('center_calendar') }}"><i class="bi bi-calendar-week"></i> Center Calendar</a></li>
     <li><hr class="dropdown-divider"></li>
     <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Reports</a>

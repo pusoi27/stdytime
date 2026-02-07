@@ -130,6 +130,21 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN reading_worksheets_per_week INTEGER DEFAULT 0")
         if "reading_ws_per_week" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN reading_ws_per_week INTEGER DEFAULT 0")
+        # Add new fields: EL, PI, V checkboxes and Day 1, Day 2 schedule fields
+        if "el" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN el INTEGER DEFAULT 0")
+        if "pi" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN pi INTEGER DEFAULT 0")
+        if "v" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN v INTEGER DEFAULT 0")
+        if "day1" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN day1 TEXT")
+        if "day2" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN day2 TEXT")
+        if "day1_time" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN day1_time TEXT")
+        if "day2_time" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN day2_time TEXT")
         conn.commit()
 
     # Ensure `whatsapp` column exists on staff table (migration for WhatsApp contact)
@@ -140,13 +155,6 @@ def init_db():
         if "whatsapp" not in cols:
             cur.execute("ALTER TABLE staff ADD COLUMN whatsapp TEXT")
         conn.commit()
-
-    # Recalculate subjects for all students based on their Math and Reading goals
-    from modules import student_manager
-    try:
-        student_manager.recalculate_all_subjects()
-    except Exception as e:
-        print(f"[init_db] Warning: Could not recalculate subjects: {e}")
 
     # Ensure new book columns exist (migration for book inventory management)
     with sqlite3.connect(DB_PATH) as conn:
@@ -162,6 +170,30 @@ def init_db():
             cur.execute("ALTER TABLE books ADD COLUMN publisher TEXT")
         if "borrower_id" not in cols:
             cur.execute("ALTER TABLE books ADD COLUMN borrower_id INTEGER REFERENCES students(id)")
+        
+        conn.commit()
+
+    # Ensure instructor_profile has center_hours column (migration for center operating hours)
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(instructor_profile)")
+        cols = [r[1] for r in cur.fetchall()]
+        
+        if "center_hours" not in cols:
+            cur.execute("ALTER TABLE instructor_profile ADD COLUMN center_hours TEXT")
+        
+        if "center_address" not in cols:
+            cur.execute("ALTER TABLE instructor_profile ADD COLUMN center_address TEXT")
+        
+        # Add weekly hours columns (start and end time for each day of week)
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        for day in days:
+            start_col = f"{day}_start"
+            end_col = f"{day}_end"
+            if start_col not in cols:
+                cur.execute(f"ALTER TABLE instructor_profile ADD COLUMN {start_col} TEXT")
+            if end_col not in cols:
+                cur.execute(f"ALTER TABLE instructor_profile ADD COLUMN {end_col} TEXT")
         
         conn.commit()
 

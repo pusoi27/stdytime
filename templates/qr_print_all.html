@@ -43,8 +43,8 @@
           <option value="{{ b[0] }}">{{ b[1] }}</option>
         {% endfor %}
       </select>
-      <button type="button" class="btn btn-primary" onclick="printBookQR()">Print QR Code</button>
-      <button type="button" class="btn btn-warning" onclick="printAllBooksQR()">Print All Books</button>
+      <button type="button" class="btn btn-primary" onclick="printBookISBN()">Print ISBN</button>
+      <button type="button" class="btn btn-warning" onclick="printAllBooksISBN()">Print All Books</button>
     </div>
   </div>
 </div>
@@ -70,14 +70,14 @@ function printAllAssistantsQR() {
   window.open('/qr/assistants/pdf', '_blank');
 }
 
-function printBookQR() {
+function printBookISBN() {
   const bid = document.getElementById('bookSelect').value;
   if (!bid) { alert('Please select a book'); return; }
-  window.open(`/qr/books/pdf/individual/${bid}`, '_blank');
+  window.open(`/isbn/pdf/individual/${bid}`, '_blank');
 }
 
-function printAllBooksQR() {
-  window.open('/qr/books/pdf', '_blank');
+function printAllBooksISBN() {
+  window.open('/isbn/pdf/all', '_blank');
 }
 </script>
 {% endblock %}

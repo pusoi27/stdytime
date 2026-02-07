@@ -1,48 +1,118 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
 <div class="container-fluid mt-3" style="max-width:900px; padding:0 10px;">
   <h4 class="mb-3">{{ action }} Student</h4>
   <form method="post" enctype="multipart/form-data">
     <!-- Basic Info Row -->
     <div class="row g-2">
-      <div class="col-md-8">
+      <div class="col-md-12">
         <label class="form-label small">Name</label>
         <input name="name" class="form-control form-control-sm" value="{{ student[1] if student else '' }}" required>
-      </div>
-      <div class="col-md-4">
-        <label class="form-label small">Subject</label>
-        <input name="subject" class="form-control form-control-sm" value="{{ student[2] if student else '' }}">
       </div>
     </div>
 
     <!-- Contact Info Row -->
     <div class="row g-2 mt-1">
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label small">Email</label>
         <input name="email" type="email" class="form-control form-control-sm" value="{{ student[3] if student else '' }}">
       </div>
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label small">Phone</label>
         <input name="phone" class="form-control form-control-sm" value="{{ student[4] if student else '' }}">
       </div>
+      <div class="col-md-4">
+        <label class="form-label small">WhatsApp</label>
+        <input name="whatsapp" class="form-control form-control-sm" value="{{ student[5] if student else '' }}">
+      </div>
     </div>
 
-    <!-- Photo & Checkboxes Row -->
+    <!-- Photo Upload & Cropper Row -->
     <div class="row g-2 mt-1">
-      <div class="col-md-6">
+      <div class="col-md-12">
         <label class="form-label small">Photo</label>
-        <input name="photo" type="file" class="form-control form-control-sm" accept="image/*">
+        <input id="photoInput" name="photo" type="file" class="form-control form-control-sm" accept="image/*">
+        <small class="text-muted d-block mt-1">Select a photo to preview and crop</small>
       </div>
-      <div class="col-md-3">
-        <div class="form-check mt-4">
-          <input name="book_loaned" type="checkbox" class="form-check-input" id="bookLoanedCheck" {{ 'checked' if (student and student[7]) else '' }}>
+    </div>
+
+    <!-- All Checkboxes Grouped Together -->
+    <div class="row g-2 mt-2">
+      <div class="col-md-2">
+        <div class="form-check">
+          <input name="s1" type="checkbox" class="form-check-input subject-checkbox" id="s1Check" {{ 'checked' if (student and student[2] == 'S1') else '' }} onchange="handleSubjectChange('s1')">
+          <label class="form-check-label small" for="s1Check">S1 (One Subject)</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check">
+          <input name="s2" type="checkbox" class="form-check-input subject-checkbox" id="s2Check" {{ 'checked' if (student and student[2] == 'S2') else '' }} onchange="handleSubjectChange('s2')">
+          <label class="form-check-label small" for="s2Check">S2 (Two Subjects)</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check">
+          <input name="book_loaned" type="checkbox" class="form-check-input" id="bookLoanedCheck" {{ 'checked' if (student and student[8]) else '' }}>
           <label class="form-check-label small" for="bookLoanedCheck">Book Loaned</label>
         </div>
       </div>
-      <div class="col-md-3">
-        <div class="form-check mt-4">
-          <input name="paper_ws" type="checkbox" class="form-check-input" id="paperWSCheck" {{ 'checked' if (student and student[8]) else '' }}>
+      <div class="col-md-1">
+        <div class="form-check">
+          <input name="paper_ws" type="checkbox" class="form-check-input" id="paperWSCheck" {{ 'checked' if (student and student[9]) else '' }}>
           <label class="form-check-label small" for="paperWSCheck">Paper WS</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check">
+          <input name="el" type="checkbox" class="form-check-input el-pi-check" id="elCheck" {{ 'checked' if (student and student[14]) else '' }} onchange="handleELPIChange('el')">
+          <label class="form-check-label small" for="elCheck">Early Learner</label>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="form-check">
+          <input name="pi" type="checkbox" class="form-check-input el-pi-check" id="piCheck" {{ 'checked' if (student and student[15]) else '' }} onchange="handleELPIChange('pi')">
+          <label class="form-check-label small" for="piCheck">Primary Instruction</label>
+        </div>
+      </div>
+      <div class="col-md-1">
+        <div class="form-check">
+          <input name="v" type="checkbox" class="form-check-input" id="vCheck" {{ 'checked' if (student and student[16]) else '' }}>
+          <label class="form-check-label small" for="vCheck">Virtual</label>
+        </div>
+      </div>
+    </div>
+    <input type="hidden" name="subject" id="subjectValue" value="{{ student[2] if student else '' }}">
+
+    <!-- Photo Preview & Crop Modal -->
+    <div id="photoCropModal" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="photoCropModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="photoCropModalLabel">Crop Student Photo</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="text-center mb-3">
+              <img id="cropperImage" style="max-width: 100%; max-height: 400px;">
+            </div>
+            <div class="text-center">
+              <button type="button" class="btn btn-sm btn-secondary" id="resetCropBtn">Reset</button>
+              <button type="button" class="btn btn-sm btn-info" id="rotateCropBtn">Rotate</button>
+            </div>
+            <div class="mt-3">
+              <label class="form-label small">Preview (Circular)</label>
+              <div class="d-flex justify-content-center">
+                <canvas id="previewCanvas" width="150" height="150" style="border: 2px solid #ccc; border-radius: 50%;"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" id="cropConfirmBtn">Confirm Crop</button>
+          </div>
         </div>
       </div>
     </div>
@@ -51,11 +121,11 @@
     <div class="row g-2 mt-1">
       <div class="col-md-6">
         <label class="form-label small">Math Goal</label>
-        <input name="math_goal" class="form-control form-control-sm" value="{{ student[9] if student else '' }}">
+        <input name="math_goal" class="form-control form-control-sm" value="{{ student[10] if student else '' }}">
       </div>
       <div class="col-md-6">
         <label class="form-label small">Math WS/Week</label>
-        <input name="math_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[10] if student else 0 }}">
+        <input name="math_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[11] if student else 0 }}">
       </div>
     </div>
 
@@ -63,13 +133,64 @@
     <div class="row g-2 mt-1">
       <div class="col-md-6">
         <label class="form-label small">Reading Goal</label>
-        <input name="reading_goal" class="form-control form-control-sm" value="{{ student[11] if student else '' }}">
+        <input name="reading_goal" class="form-control form-control-sm" value="{{ student[12] if student else '' }}">
       </div>
       <div class="col-md-6">
         <label class="form-label small">Reading WS/Week</label>
-        <input name="reading_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[12] if student else 0 }}">
+        <input name="reading_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[13] if student else 0 }}">
       </div>
     </div>
+
+    <!-- Day 1 Schedule Row -->
+    <div class="row g-2 mt-1">
+      <div class="col-md-6">
+        <label class="form-label small">Day 1</label>
+        <select name="day1" id="day1Select" class="form-control form-control-sm" onchange="updateDay1Times()">
+          <option value="">-- Select Day --</option>
+          {% if profile %}
+            {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+            {% for day_name, day_key in days %}
+              {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+                <option value="{{ day_name }}" {% if student and student[17] == day_name %}selected{% endif %}>{{ day_name }}</option>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">Day 1 Time</label>
+        <select name="day1_time" id="day1TimeSelect" class="form-control form-control-sm">
+          <option value="">-- Select Time --</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Day 2 Schedule Row -->
+    <div class="row g-2 mt-1">
+      <div class="col-md-6">
+        <label class="form-label small">Day 2</label>
+        <select name="day2" id="day2Select" class="form-control form-control-sm" onchange="updateDay2Times()">
+          <option value="">-- Select Day --</option>
+          {% if profile %}
+            {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+            {% for day_name, day_key in days %}
+              {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+                <option value="{{ day_name }}" {% if student and student[18] == day_name %}selected{% endif %}>{{ day_name }}</option>
+              {% endif %}
+            {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label small">Day 2 Time</label>
+        <select name="day2_time" id="day2TimeSelect" class="form-control form-control-sm">
+          <option value="">-- Select Time --</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Hidden input for cropped image data -->
+    <input type="hidden" id="croppedPhotoData" name="cropped_photo_data">
 
     <!-- Action Buttons -->
     <div class="mt-3">
@@ -78,4 +199,315 @@
     </div>
   </form>
 </div>
+
+<script>
+// Class hours data from instructor profile
+const classHours = {
+  {% if profile %}
+    {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+    {% for day_name, day_key in days %}
+      {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+        '{{ day_name }}': { start: '{{ profile[day_key + '_start'] }}', end: '{{ profile[day_key + '_end'] }}' },
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+};
+
+// Generate time slots in 30-minute increments
+function generateTimeSlots(startTime, endTime, offsetMinutes) {
+  const slots = [];
+  const [startHour, startMin] = startTime.split(':').map(Number);
+  const [endHour, endMin] = endTime.split(':').map(Number);
+  
+  let currentMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin - offsetMinutes;
+  
+  while (currentMinutes <= endMinutes) {
+    const hour = Math.floor(currentMinutes / 60);
+    const min = currentMinutes % 60;
+    const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+    
+    // Convert to 12-hour format for display
+    const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+    const displayStr = `${displayHour}:${String(min).padStart(2, '0')} PM`;
+    
+    slots.push({ value: timeStr, display: displayStr });
+    currentMinutes += 30;
+  }
+  
+  return slots;
+}
+
+// Handle Early Learner and Primary Instruction mutual exclusion
+function handleELPIChange(checkbox) {
+  const elCheck = document.getElementById('elCheck');
+  const piCheck = document.getElementById('piCheck');
+  
+  if (checkbox === 'el' && elCheck.checked) {
+    piCheck.checked = false;
+  } else if (checkbox === 'pi' && piCheck.checked) {
+    elCheck.checked = false;
+  }
+}
+
+// Update Day 1 time slots
+function updateDay1Times() {
+  const day1Select = document.getElementById('day1Select');
+  const day1TimeSelect = document.getElementById('day1TimeSelect');
+  const selectedDay = day1Select.value;
+  const savedTime = '{{ student[19] if student else "" }}';
+  
+  // Clear existing options
+  day1TimeSelect.innerHTML = '<option value="">-- Select Time --</option>';
+  
+  if (selectedDay && classHours[selectedDay]) {
+    // Get subject to determine offset
+    const s1 = document.getElementById('s1Check');
+    const s2 = document.getElementById('s2Check');
+    const offset = s1.checked ? 30 : (s2.checked ? 60 : 30);
+    
+    const hours = classHours[selectedDay];
+    const slots = generateTimeSlots(hours.start, hours.end, offset);
+    
+    slots.forEach(slot => {
+      const option = document.createElement('option');
+      option.value = slot.value;
+      option.textContent = slot.display;
+      if (savedTime && slot.value === savedTime) {
+        option.selected = true;
+      }
+      day1TimeSelect.appendChild(option);
+    });
+  }
+}
+
+// Update Day 2 time slots
+function updateDay2Times() {
+  const day2Select = document.getElementById('day2Select');
+  const day2TimeSelect = document.getElementById('day2TimeSelect');
+  const selectedDay = day2Select.value;
+  const savedTime = '{{ student[20] if student else "" }}';
+  
+  // Clear existing options
+  day2TimeSelect.innerHTML = '<option value="">-- Select Time --</option>';
+  
+  if (selectedDay && classHours[selectedDay]) {
+    // Get subject to determine offset
+    const s1 = document.getElementById('s1Check');
+    const s2 = document.getElementById('s2Check');
+    const offset = s1.checked ? 30 : (s2.checked ? 60 : 30);
+    
+    const hours = classHours[selectedDay];
+    const slots = generateTimeSlots(hours.start, hours.end, offset);
+    
+    slots.forEach(slot => {
+      const option = document.createElement('option');
+      option.value = slot.value;
+      option.textContent = slot.display;
+      if (savedTime && slot.value === savedTime) {
+        option.selected = true;
+      }
+      day2TimeSelect.appendChild(option);
+    });
+  }
+}
+
+// Initialize time slots on page load
+document.addEventListener('DOMContentLoaded', function() {
+  updateDay1Times();
+  updateDay2Times();
+});
+
+// Subject checkbox mutual exclusion logic
+function handleSubjectChange(checked) {
+  const s1 = document.getElementById('s1Check');
+  const s2 = document.getElementById('s2Check');
+  const subjectValue = document.getElementById('subjectValue');
+  
+  if (checked === 's1') {
+    if (s1.checked) {
+      s2.checked = false;
+      subjectValue.value = 'S1';
+    } else {
+      subjectValue.value = '';
+    }
+  } else if (checked === 's2') {
+    if (s2.checked) {
+      s1.checked = false;
+      subjectValue.value = 'S2';
+    } else {
+      subjectValue.value = '';
+    }
+  }
+  
+  // Regenerate time slots when subject changes
+  updateDay1Times();
+  updateDay2Times();
+}
+
+let cropper = null;
+let croppedBlob = null;
+const photoInput = document.getElementById('photoInput');
+const photoCropModal = new bootstrap.Modal(document.getElementById('photoCropModal'));
+const cropperImage = document.getElementById('cropperImage');
+const resetCropBtn = document.getElementById('resetCropBtn');
+const rotateCropBtn = document.getElementById('rotateCropBtn');
+const cropConfirmBtn = document.getElementById('cropConfirmBtn');
+const previewCanvas = document.getElementById('previewCanvas');
+const croppedPhotoDataInput = document.getElementById('croppedPhotoData');
+const previewCtx = previewCanvas.getContext('2d');
+
+// Handle photo file selection
+photoInput.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      cropperImage.src = event.target.result;
+      
+      // Destroy previous cropper if exists
+      if (cropper) {
+        cropper.destroy();
+      }
+      
+      // Initialize new cropper
+      cropper = new Cropper(cropperImage, {
+        aspectRatio: 1,
+        viewMode: 1,
+        autoCropArea: 0.8,
+        responsive: true,
+        guides: true,
+        modal: true,
+        crop: updatePreview
+      });
+      
+      photoCropModal.show();
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+// Reset crop
+resetCropBtn.addEventListener('click', function() {
+  if (cropper) cropper.reset();
+});
+
+// Rotate image
+rotateCropBtn.addEventListener('click', function() {
+  if (cropper) cropper.rotate(45);
+});
+
+// Update preview canvas with circular crop
+function updatePreview() {
+  if (!cropper) return;
+  const canvas = cropper.getCroppedCanvas({
+    maxWidth: 150,
+    maxHeight: 150,
+    fillColor: '#fff',
+    imageSmoothingEnabled: true,
+    imageSmoothingQuality: 'high'
+  });
+  
+  // Draw circular preview
+  previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  previewCtx.beginPath();
+  previewCtx.arc(75, 75, 75, 0, Math.PI * 2);
+  previewCtx.fillStyle = '#f0f0f0';
+  previewCtx.fill();
+  previewCtx.strokeStyle = '#ccc';
+  previewCtx.lineWidth = 2;
+  previewCtx.stroke();
+  
+  // Clip to circle and draw image
+  previewCtx.save();
+  previewCtx.beginPath();
+  previewCtx.arc(75, 75, 75, 0, Math.PI * 2);
+  previewCtx.clip();
+  previewCtx.drawImage(canvas, 0, 0, 150, 150);
+  previewCtx.restore();
+}
+
+// Confirm crop and save
+cropConfirmBtn.addEventListener('click', function() {
+  if (cropper) {
+    // Get the cropped canvas
+    const canvas = cropper.getCroppedCanvas({
+      maxWidth: 400,
+      maxHeight: 400,
+      fillColor: '#fff',
+      imageSmoothingEnabled: true,
+      imageSmoothingQuality: 'high'
+    });
+    
+    // Create a circular image with white background
+    const circularCanvas = document.createElement('canvas');
+    circularCanvas.width = 400;
+    circularCanvas.height = 400;
+    const ctx = circularCanvas.getContext('2d');
+    
+    // Draw white background
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, 400, 400);
+    
+    // Draw circular mask and image
+    ctx.beginPath();
+    ctx.arc(200, 200, 200, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(canvas, 0, 0);
+    
+    // Convert to blob and store
+    circularCanvas.toBlob(function(blob) {
+      croppedBlob = blob;
+      croppedPhotoDataInput.value = 'CROPPED';
+      
+      // Update the file input to indicate a crop was done
+      const fileName = photoInput.files[0].name;
+      photoInput.value = '';
+      
+      photoCropModal.hide();
+      
+      // Show success message
+      const alert = document.createElement('div');
+      alert.className = 'alert alert-success alert-dismissible fade show mt-2';
+      alert.innerHTML = 'Photo cropped successfully! <button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+      photoInput.parentElement.parentElement.insertAdjacentElement('afterend', alert);
+    }, 'image/png');
+  }
+});
+
+// Handle form submission with cropped image
+document.querySelector('form').addEventListener('submit', function(e) {
+    // Validate subject selection first
+    const s1 = document.getElementById('s1Check');
+    const s2 = document.getElementById('s2Check');
+  
+    if (!s1.checked && !s2.checked) {
+      e.preventDefault();
+      alert('Please select at least one subject type (S1 or S2)');
+      return false;
+    }
+  
+  if (croppedBlob) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const croppedFile = new File([croppedBlob], 'student_photo.png', { type: 'image/png' });
+    formData.set('photo', croppedFile);
+    
+    fetch(window.location.href, {
+      method: 'POST',
+      body: formData
+    }).then(response => {
+      if (response.ok) {
+        window.location.href = "{{ url_for('students_list') }}";
+      } else {
+        alert('Error saving student');
+      }
+    }).catch(error => {
+      console.error('Error:', error);
+      alert('Error saving student');
+    });
+  }
+});
+</script>
 {% endblock %}

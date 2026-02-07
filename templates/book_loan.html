@@ -66,7 +66,11 @@
       </div>
       <div id="loanBorrowed" class="d-none">
         <p class="mb-3 text-warning"><i class="bi bi-info-circle"></i> Book is currently loaned to <strong id="borrowedName"></strong>. Click return when it comes back.</p>
-        <button class="btn btn-outline-primary" id="returnBtn"><i class="bi bi-box-arrow-in-left"></i> Check In</button>
+        <div class="row g-3">
+          <div class="col-md-3">
+            <button class="btn btn-info w-100" id="returnBtn"><i class="bi bi-box-arrow-in-left"></i> Check In / Return Book</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -211,44 +215,25 @@
     const q = bookSearch.value.trim();
     if (!q) { showAlert('Please enter a title or ISBN.', 'warning'); setStatus(''); return; }
 
-    // Decide search mode
-    const isIsbn = /^[0-9Xx-]{10,17}$/.test(q.replace(/\s+/g, ''));
-    let url;
-    if (isIsbn) {
-      url = `/api/books/isbn_lookup?isbn=${encodeURIComponent(q)}`;
-    } else {
-      url = `/api/books/search?q=${encodeURIComponent(q)}&level=`;
-    }
+    // Always search in local database only (no external API lookup)
+    const url = `/api/books/search?q=${encodeURIComponent(q)}&level=`;
 
     try {
       const resp = await fetch(url);
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Lookup failed');
+      if (!resp.ok) throw new Error(data.error || 'Search failed');
 
       let book = null;
-      if (isIsbn) {
-        if (data.isbn_existing_book) {
-          book = data.isbn_existing_book;
-        } else if (data.existing_book) {
-          book = data.existing_book;
-        } else if (data.book) {
-          // new from API, but not in DB
-          showAlert('Book not found in database. Add it first.', 'warning');
-          setStatus('');
-          return;
-        }
+      if (data.books && data.books.length === 1) {
+        book = data.books[0];
+      } else if (data.books && data.books.length > 1) {
+        showAlert('Multiple matches found. Please refine your search or use full ISBN.', 'warning');
+        setStatus('');
+        return;
       } else {
-        if (data.books && data.books.length === 1) {
-          book = data.books[0];
-        } else if (data.books && data.books.length > 1) {
-          showAlert('Multiple matches. Please refine the title or scan ISBN.', 'warning');
-          setStatus('');
-          return;
-        } else {
-          showAlert('No book found. Check spelling or scan ISBN.', 'warning');
-          setStatus('');
-          return;
-        }
+        showAlert('Book not found in your library. Add it first in the Books page.', 'warning');
+        setStatus('');
+        return;
       }
 
       if (!book) {

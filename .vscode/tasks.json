@@ -11,6 +11,16 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Bump app version",
+			"type": "shell",
+			"command": "c:\\Users\\octav\\AppData\\Local\\Programs\\Python\\Python312\\005_KumoClock\\.venv\\Scripts\\python.exe",
+			"args": [
+				"scripts/version_bump.py"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

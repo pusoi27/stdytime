@@ -101,9 +101,9 @@ def register_book_routes(app):
             params = []
             
             if query:
-                sql += " AND (title LIKE ? OR author LIKE ? OR publisher LIKE ?)"
+                sql += " AND (title LIKE ? OR author LIKE ? OR publisher LIKE ? OR isbn LIKE ? OR isbn13 LIKE ?)"
                 search_term = f"%{query}%"
-                params.extend([search_term, search_term, search_term])
+                params.extend([search_term, search_term, search_term, search_term, search_term])
             
             if level:
                 sql += " AND reading_level = ?"

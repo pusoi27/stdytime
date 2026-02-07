@@ -1,6 +1,71 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
+{% macro format_time_12hr(time_str) %}
+  {% if time_str and time_str is string %}
+    {% set parts = time_str.split(':') %}
+    {% if parts|length >= 2 %}
+      {% set hour = parts[0]|int %}
+      {% set minute = parts[1] %}
+      {% if hour == 0 %}
+        12:{{ minute }} AM
+      {% elif hour < 12 %}
+        {{ hour }}:{{ minute }} AM
+      {% elif hour == 12 %}
+        12:{{ minute }} PM
+      {% else %}
+        {{ hour - 12 }}:{{ minute }} PM
+      {% endif %}
+    {% else %}
+      {{ time_str }}
+    {% endif %}
+  {% endif %}
+{% endmacro %}
+<style>
+  /* Excel-like table styling with frozen header */
+  .table-container {
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    position: relative;
+    border: 1px solid #ddd;
+  }
+  .student-table {
+    font-size: 0.9rem;
+    border-collapse: collapse;
+    margin-bottom: 0;
+  }
+  .student-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .student-table th {
+    white-space: nowrap;
+    background-color: #0d6efd !important;
+    color: white !important;
+    font-weight: 600;
+    padding: 8px 6px !important;
+    border: 1px solid white !important;
+    box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4);
+  }
+  .student-table td {
+    padding: 6px !important;
+    vertical-align: middle;
+    border: 1px solid #dee2e6 !important;
+  }
+  .student-table tbody tr:hover {
+    background-color: #f0f8ff !important;
+  }
+  .col-id { width: 40px; text-align: center; font-weight: 600; }
+  .col-name { min-width: 100px; }
+  .col-subject { width: 60px; text-align: center; }
+  .col-day { min-width: 90px; font-weight: 500; }
+  .col-time { min-width: 70px; text-align: center; font-weight: 500; }
+  .col-photo { width: 60px; text-align: center; }
+  .col-qr { width: 60px; text-align: center; }
+  .col-checkbox { width: 35px; text-align: center; padding: 4px 2px !important; }
+  .col-actions { min-width: 120px; }
+</style>
+<div class="container-fluid mt-4 px-4">
   <h4 class="mb-3 text-primary">Student Database</h4>
 
   <!-- Add button -->
@@ -13,39 +78,74 @@
     </form>
   </div>
 
-  <table class="table table-sm table-striped align-middle">
-    <thead class="table-primary">
+  <div class="table-container">
+  <table class="table table-sm table-striped align-middle student-table">
+    <thead>
       <tr>
-        <th>ID</th><th>Name</th><th>Subject</th><th>Email</th><th>Phone</th><th>Photo</th><th>QR</th><th>Book Loan</th><th>Math Goal</th><th>Math WS/wk</th><th>Reading Goal</th><th>Reading WS/wk</th><th>Actions</th>
+        <th class="col-id">ID</th>
+        <th class="col-name">Name</th>
+        <th class="col-subject">Subject</th>
+        <th class="col-checkbox">EL</th>
+        <th class="col-checkbox">PI</th>
+        <th class="col-checkbox">V</th>
+        <th class="col-day">Day 1</th>
+        <th class="col-time">Day 1 Time</th>
+        <th class="col-day">Day 2</th>
+        <th class="col-time">Day 2 Time</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>WhatsApp</th>
+        <th class="col-photo">Photo</th>
+        <th class="col-qr">QR</th>
+        <th class="col-checkbox">Book Loan</th>
+        <th>Math Goal</th>
+        <th>Math WS/wk</th>
+        <th>Reading Goal</th>
+        <th>Reading WS/wk</th>
+        <th class="col-actions">Actions</th>
       </tr>
     </thead>
     <tbody>
       {% for s in students %}
       <tr>
-        <td>{{ s[0] }}</td>
-        <td>{{ s[1] }}</td>
-        <td>{{ s[2] if s[2] else '-' }}</td>
-        <td>{{ s[3] }}</td>
+        <td class="col-id">{{ s[0] }}</td>
+        <td class="col-name">{{ s[1] }}</td>
+        <td class="col-subject">{{ s[2] if s[2] else '-' }}</td>
+        <td class="text-center col-checkbox">
+          {% if s[15] %}<span class="badge bg-warning">✓</span>{% endif %}
+        </td>
+        <td class="text-center col-checkbox">
+          {% if s[16] %}<span class="badge bg-info">✓</span>{% endif %}
+        </td>
+        <td class="text-center col-checkbox">
+          {% if s[17] %}<span class="badge bg-success">✓</span>{% endif %}
+        </td>
+        <td class="col-day">{{ s[18] or '' }}</td>
+        <td class="col-time">{{ format_time_12hr(s[19]) }}</td>
+        <td class="col-day">{{ s[20] or '' }}</td>
+        <td class="col-time">{{ format_time_12hr(s[21]) }}</td>
         <td>{{ s[4] }}</td>
-        <td>
-          {% if s[5] %}
-            <img src="/static/img/students/{{ s[5] }}" alt="photo" width="48" height="48" class="rounded-circle">
+        <td>{{ s[5] }}</td>
+        <td>{{ s[6] }}</td>
+        <td class="col-photo">
+          {% if s[7] %}
+            <img src="/static/img/students/{{ s[7] }}" alt="photo" width="48" height="48" class="rounded-circle">
           {% else %}
             <img src="/static/img/default.png" alt="default" width="48" height="48" class="rounded-circle">
           {% endif %}
         </td>
-        <td>
+        <td class="col-qr">
           {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
           <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'">
         </td>
-        <td class="text-center">
-          {% if s[7] %}<span class="badge bg-primary">B</span>{% endif %}
+        <td class="text-center col-checkbox">
+          {% if s[9] %}<span class="badge bg-primary">B</span>{% endif %}
         </td>
-        <td>{{ s[9] or '' }}</td>
-        <td>{{ s[10] or 0 }}</td>
         <td>{{ s[11] or '' }}</td>
         <td>{{ s[12] or 0 }}</td>
-        <td>
+        <td>{{ s[13] or '' }}</td>
+        <td>{{ s[14] or 0 }}</td>
+        <td class="col-actions">
           <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
           <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete student?');">Del</a>
         </td>
@@ -53,5 +153,36 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
+
+<script>
+  // Save and restore scroll position
+  const TABLE_CONTAINER_KEY = 'studentTableScrollPos';
+  const tableContainer = document.querySelector('.table-container');
+
+  // Restore scroll position on page load
+  window.addEventListener('load', () => {
+    const savedPos = sessionStorage.getItem(TABLE_CONTAINER_KEY);
+    if (savedPos && tableContainer) {
+      tableContainer.scrollTop = parseInt(savedPos, 10);
+    }
+  });
+
+  // Save scroll position before navigating away
+  document.querySelectorAll('a[href*="/students/edit/"]').forEach(link => {
+    link.addEventListener('click', () => {
+      if (tableContainer) {
+        sessionStorage.setItem(TABLE_CONTAINER_KEY, tableContainer.scrollTop);
+      }
+    });
+  });
+
+  // Also save when using back button (via pagehide event)
+  window.addEventListener('pagehide', () => {
+    if (tableContainer) {
+      sessionStorage.setItem(TABLE_CONTAINER_KEY, tableContainer.scrollTop);
+    }
+  });
+</script>
 {% endblock %}
