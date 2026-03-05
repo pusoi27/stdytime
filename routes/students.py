@@ -6,7 +6,7 @@ import sqlite3
 from modules.database import DB_PATH
 import os
 
-def register_student_routes(app, student_photos_static, templates_student_photos, upload_folder):
+def register_student_routes(app, upload_folder):
     """Register student CRUD and CSV routes."""
     
     @app.route("/students")
@@ -14,6 +14,7 @@ def register_student_routes(app, student_photos_static, templates_student_photos
         return render_template(
             "students.html",
             students=student_manager.get_all_students(),
+            deleted_students=student_manager.get_deleted_students(),
         )
 
     @app.route("/students/add", methods=["GET", "POST"])
@@ -23,23 +24,12 @@ def register_student_routes(app, student_photos_static, templates_student_photos
             if subject not in {"S1", "S2"}:
                 flash("Please select a valid Subject (S1 or S2).", "danger")
                 return redirect(url_for("students_add"))
-            file = request.files.get("photo")
-            filename = None
-            if file and file.filename:
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(student_photos_static, filename))
-                try:
-                    file.stream.seek(0)
-                    file.save(os.path.join(templates_student_photos, filename))
-                except Exception:
-                    pass
             student_manager.add_student(
                 request.form["name"],
                 subject,
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
                 request.form.get("whatsapp", ""),
-                filename,
                 book_loaned=int(bool(request.form.get("book_loaned"))),
                 paper_ws=int(bool(request.form.get("paper_ws"))),
                 math_goal=request.form.get("math_goal", ""),
@@ -71,16 +61,6 @@ def register_student_routes(app, student_photos_static, templates_student_photos
             if subject not in {"S1", "S2"}:
                 flash("Please select a valid Subject (S1 or S2).", "danger")
                 return redirect(url_for("students_edit", sid=sid))
-            filename = None
-            file = request.files.get("photo")
-            if file and file.filename:
-                filename = secure_filename(file.filename)
-                file.save(os.path.join(student_photos_static, filename))
-                try:
-                    file.stream.seek(0)
-                    file.save(os.path.join(templates_student_photos, filename))
-                except Exception:
-                    pass
             student_manager.update_student(
                 sid,
                 request.form["name"],
@@ -94,7 +74,6 @@ def register_student_routes(app, student_photos_static, templates_student_photos
                 math_worksheets_per_week=request.form.get("math_worksheets_per_week", 0),
                 reading_goal=request.form.get("reading_goal", ""),
                 reading_worksheets_per_week=request.form.get("reading_worksheets_per_week", 0),
-                photo=filename,
                 el=int(bool(request.form.get("el"))),
                 pi=int(bool(request.form.get("pi"))),
                 v=int(bool(request.form.get("v"))),
@@ -114,6 +93,18 @@ def register_student_routes(app, student_photos_static, templates_student_photos
     def students_delete(sid):
         student_manager.delete_student(sid)
         flash("Student deleted.", "warning")
+        return redirect(url_for("students_list"))
+
+    @app.route("/students/reactivate/<int:sid>")
+    def students_reactivate(sid):
+        student_manager.reactivate_student(sid)
+        flash("Student reactivated.", "success")
+        return redirect(url_for("students_list"))
+
+    @app.route("/students/permanent-delete/<int:sid>")
+    def students_permanent_delete(sid):
+        student_manager.permanent_delete_student(sid)
+        flash("Student permanently deleted.", "danger")
         return redirect(url_for("students_list"))
 
     @app.route("/students/import", methods=["POST"])

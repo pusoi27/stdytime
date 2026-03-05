@@ -160,16 +160,21 @@ def register_instructor_profile_routes(app):
                 'name': student[1],
                 'subject': student[2] if student[2] else 'N/A',
                 'email': student[4] if len(student) > 4 else '',
-                'el': student[15] if len(student) > 15 else 0,
-                'pi': student[16] if len(student) > 16 else 0,
-                'v': student[17] if len(student) > 17 else 0,
+                'el': student[14] if len(student) > 14 else 0,
+                'pi': student[15] if len(student) > 15 else 0,
+                'v': student[16] if len(student) > 16 else 0,
             }
             
-            # Check if student is virtual
-            is_virtual = student[17] if len(student) > 17 else 0
+            # Check if student has scheduled times
+            has_day1 = len(student) > 17 and student[17]
+            has_day2 = len(student) > 19 and student[19]
+            has_scheduled_times = has_day1 or has_day2
             
-            # If virtual, add to virtual students list instead of calendar
-            if is_virtual:
+            # Check if student is virtual
+            is_virtual = student[16] if len(student) > 16 else 0
+            
+            # If virtual with NO scheduled times, add to virtual students list instead of calendar
+            if is_virtual and not has_scheduled_times:
                 virtual_students.append(student_data)
                 continue
             
@@ -193,22 +198,33 @@ def register_instructor_profile_routes(app):
                         schedule['calendar'][day][next_time_display].append(student_data)
             
             # Add to Day 1
-            if len(student) > 18 and student[18]:  # day1
-                day1 = student[18]
-                time1 = student[19] if len(student) > 19 else None
+            if len(student) > 17 and student[17]:  # day1
+                day1 = student[17]
+                time1 = student[18] if len(student) > 18 else None
                 if time1:
                     time_display = format_time_display(time1)
                     is_s2 = student[2] == 'S2'
                     add_student_to_slot(day1, time_display, student_data, schedule, add_next_slot=is_s2)
             
             # Add to Day 2
-            if len(student) > 20 and student[20]:  # day2
-                day2 = student[20]
-                time2 = student[21] if len(student) > 21 else None
+            if len(student) > 19 and student[19]:  # day2
+                day2 = student[19]
+                time2 = student[20] if len(student) > 20 else None
                 if time2:
                     time_display = format_time_display(time2)
                     is_s2 = student[2] == 'S2'
                     add_student_to_slot(day2, time_display, student_data, schedule, add_next_slot=is_s2)
+
+        # Order students within each slot: EL first, then PI, then the rest
+        for day in schedule['calendar']:
+            for time_slot in schedule['calendar'][day]:
+                schedule['calendar'][day][time_slot].sort(
+                    key=lambda s: (
+                        0 if s.get('el') else 1,
+                        0 if s.get('pi') else 1,
+                        s.get('name', '')
+                    )
+                )
         
         total_students = len([s for s in students if (len(s) > 18 and s[18]) or (len(s) > 20 and s[20])])
         schedule['virtual_students'] = virtual_students
@@ -217,13 +233,15 @@ def register_instructor_profile_routes(app):
 
 
 def generate_time_slots(start_time, end_time):
-    """Generate 30-minute time slots between start and end time"""
+    """Generate 30-minute time slots between start and end time.
+    Excludes the final slot (at end_time) since students implicitly cannot start at that time.
+    """
     slots = []
     start_minutes = time_to_minutes(start_time)
     end_minutes = time_to_minutes(end_time)
     
     current = start_minutes
-    while current <= end_minutes:
+    while current < end_minutes:  # Changed from <= to < to exclude the final slot
         slots.append(minutes_to_time_display(current))
         current += 30
     
@@ -231,33 +249,61 @@ def generate_time_slots(start_time, end_time):
 
 
 def time_to_minutes(time_str):
-    """Convert HH:MM or HH:MM PM to minutes since midnight"""
+    """Convert HH:MM or HH:MM AM/PM to minutes since midnight
+    Default to PM when no AM/PM marker is present (since all class hours are PM)
+    """
     if not time_str or ':' not in time_str:
         return 0
+    
+    # Extract AM/PM suffix if present
+    is_pm = ' PM' in time_str
+    is_am = ' AM' in time_str
+    
     # Remove AM/PM suffix if present
     time_str = time_str.replace(' PM', '').replace(' AM', '').strip()
     parts = time_str.split(':')
-    return int(parts[0]) * 60 + int(parts[1])
+    hour = int(parts[0])
+    minute = int(parts[1])
+    
+    # Convert 12-hour to 24-hour
+    if is_pm or is_am:
+        # Explicit AM/PM marker present
+        if is_pm and hour != 12:
+            hour += 12
+        elif is_am and hour == 12:
+            hour = 0
+    else:
+        # No AM/PM marker - default to PM for times <= 12 (since all class hours are PM)
+        if hour <= 12:
+            if hour != 12:
+                hour += 12
+        # If hour > 12, assume it's already in 24-hour format (shouldn't happen, but handle it)
+    
+    return hour * 60 + minute
 
 
 def minutes_to_time_display(minutes):
-    """Convert minutes to display format (12-hour PM)"""
+    """Convert minutes to display format (12-hour PM only - no AM times)"""
     hour = minutes // 60
     minute = minutes % 60
+    # Convert 24-hour to 12-hour format
     display_hour = hour if hour <= 12 else hour - 12
     if display_hour == 0:
         display_hour = 12
+    # All times are PM (no AM times in the system)
     return f"{display_hour}:{minute:02d} PM"
 
 
 def format_time_display(time_str):
-    """Format time from 24-hour to 12-hour PM format"""
+    """Format time from 24-hour to 12-hour PM format (no AM times)"""
     if not time_str or ':' not in time_str:
         return time_str
     parts = time_str.split(':')
     hour = int(parts[0])
     minute = parts[1]
+    # Convert 24-hour to 12-hour format
     display_hour = hour if hour <= 12 else hour - 12
     if display_hour == 0:
         display_hour = 12
+    # All times are PM (no AM times in the system)
     return f"{display_hour}:{minute} PM"

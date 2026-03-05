@@ -25,13 +25,19 @@
   .table-container {
     max-height: calc(100vh - 200px);
     overflow-y: auto;
+    overflow-x: auto;
     position: relative;
     border: 1px solid #ddd;
+    width: 100%;
+    margin: 0;
+    padding: 0;
   }
   .student-table {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     border-collapse: collapse;
     margin-bottom: 0;
+    width: 100%;
+    min-width: fit-content;
   }
   .student-table thead {
     position: sticky;
@@ -43,30 +49,57 @@
     background-color: #0d6efd !important;
     color: white !important;
     font-weight: 600;
-    padding: 8px 6px !important;
+    padding: 6px 4px !important;
     border: 1px solid white !important;
     box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4);
+    font-size: 0.8rem;
   }
   .student-table td {
-    padding: 6px !important;
+    padding: 4px !important;
     vertical-align: middle;
     border: 1px solid #dee2e6 !important;
   }
   .student-table tbody tr:hover {
     background-color: #f0f8ff !important;
   }
-  .col-id { width: 40px; text-align: center; font-weight: 600; }
-  .col-name { min-width: 100px; }
-  .col-subject { width: 60px; text-align: center; }
-  .col-day { min-width: 90px; font-weight: 500; }
-  .col-time { min-width: 70px; text-align: center; font-weight: 500; }
-  .col-photo { width: 60px; text-align: center; }
-  .col-qr { width: 60px; text-align: center; }
-  .col-checkbox { width: 35px; text-align: center; padding: 4px 2px !important; }
-  .col-actions { min-width: 120px; }
+  .deleted-student-row {
+    background-color: #f5f5f5 !important;
+  }
+  .deleted-student-row:hover {
+    background-color: #efefef !important;
+  }
+  .table-section-header {
+    background-color: #e9ecef !important;
+    color: #6c757d;
+    font-weight: 500;
+    border-top: 2px solid #dee2e6 !important;
+  }
+  .col-id { width: 35px; text-align: center; font-weight: 600; }
+  .col-name { min-width: 90px; }
+  .col-subject { width: 50px; text-align: center; }
+  .col-day { min-width: 80px; font-weight: 500; }
+  .col-time { min-width: 65px; text-align: center; font-weight: 500; }
+  .col-qr { width: 45px; text-align: center; }
+  .col-checkbox { width: 32px; text-align: center; padding: 3px 2px !important; }
+  .col-actions { min-width: 140px; }
+
+  /* Responsive adjustments for smaller screens */
+  @media (max-width: 1200px) {
+    .student-table { font-size: 0.8rem; }
+    .student-table th { padding: 5px 3px !important; font-size: 0.75rem; }
+    .student-table td { padding: 3px !important; }
+    .col-name { min-width: 80px; }
+    .col-day { min-width: 70px; }
+    .col-actions { min-width: 120px; }
+  }
+
+  @media (max-width: 992px) {
+    .col-time { display: none; }
+    .col-day { min-width: 60px; }
+  }
 </style>
-<div class="container-fluid mt-4 px-4">
-  <h4 class="mb-3 text-primary">Student Database</h4>
+<div class="container-fluid mt-3 px-2 px-md-3">
+  <h4 class="mb-2 text-primary">Student Database</h4>
 
   <!-- Add button -->
   <div class="mb-2">
@@ -95,7 +128,6 @@
         <th>Email</th>
         <th>Phone</th>
         <th>WhatsApp</th>
-        <th class="col-photo">Photo</th>
         <th class="col-qr">QR</th>
         <th class="col-checkbox">Book Loan</th>
         <th>Math Goal</th>
@@ -106,51 +138,92 @@
       </tr>
     </thead>
     <tbody>
+      <!-- Active Students -->
       {% for s in students %}
       <tr>
         <td class="col-id">{{ s[0] }}</td>
         <td class="col-name">{{ s[1] }}</td>
         <td class="col-subject">{{ s[2] if s[2] else '-' }}</td>
         <td class="text-center col-checkbox">
-          {% if s[15] %}<span class="badge bg-warning">✓</span>{% endif %}
+          {% if s[14] %}<span class="badge bg-warning">✓</span>{% endif %}
         </td>
         <td class="text-center col-checkbox">
-          {% if s[16] %}<span class="badge bg-info">✓</span>{% endif %}
+          {% if s[15] %}<span class="badge bg-info">✓</span>{% endif %}
         </td>
         <td class="text-center col-checkbox">
-          {% if s[17] %}<span class="badge bg-success">✓</span>{% endif %}
+          {% if s[16] %}<span class="badge bg-success">✓</span>{% endif %}
         </td>
-        <td class="col-day">{{ s[18] or '' }}</td>
-        <td class="col-time">{{ format_time_12hr(s[19]) }}</td>
-        <td class="col-day">{{ s[20] or '' }}</td>
-        <td class="col-time">{{ format_time_12hr(s[21]) }}</td>
+        <td class="col-day">{{ s[17] or '' }}</td>
+        <td class="col-time">{{ format_time_12hr(s[18]) }}</td>
+        <td class="col-day">{{ s[19] or '' }}</td>
+        <td class="col-time">{{ format_time_12hr(s[20]) }}</td>
         <td>{{ s[4] }}</td>
         <td>{{ s[5] }}</td>
         <td>{{ s[6] }}</td>
-        <td class="col-photo">
-          {% if s[7] %}
-            <img src="/static/img/students/{{ s[7] }}" alt="photo" width="48" height="48" class="rounded-circle">
-          {% else %}
-            <img src="/static/img/default.png" alt="default" width="48" height="48" class="rounded-circle">
-          {% endif %}
-        </td>
         <td class="col-qr">
           {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
           <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'">
         </td>
         <td class="text-center col-checkbox">
-          {% if s[9] %}<span class="badge bg-primary">B</span>{% endif %}
+          {% if s[8] %}<span class="badge bg-primary">B</span>{% endif %}
         </td>
-        <td>{{ s[11] or '' }}</td>
-        <td>{{ s[12] or 0 }}</td>
-        <td>{{ s[13] or '' }}</td>
-        <td>{{ s[14] or 0 }}</td>
+        <td>{{ s[10] or '' }}</td>
+        <td>{{ s[11] or 0 }}</td>
+        <td>{{ s[12] or '' }}</td>
+        <td>{{ s[13] or 0 }}</td>
         <td class="col-actions">
           <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
           <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete student?');">Del</a>
         </td>
       </tr>
       {% endfor %}
+
+      <!-- Deleted Students Section -->
+      {% if deleted_students %}
+      <tr>
+        <td colspan="20" class="table-section-header bg-light px-3 py-2">
+          <strong class="text-muted">Deleted Students</strong>
+        </td>
+      </tr>
+      {% for s in deleted_students %}
+      <tr class="deleted-student-row">
+        <td class="col-id text-muted">{{ s[0] }}</td>
+        <td class="col-name text-muted">{{ s[1] }}</td>
+        <td class="col-subject text-muted">{{ s[2] if s[2] else '-' }}</td>
+        <td class="text-center col-checkbox text-muted">
+          {% if s[14] %}<span class="badge bg-secondary">✓</span>{% endif %}
+        </td>
+        <td class="text-center col-checkbox text-muted">
+          {% if s[15] %}<span class="badge bg-secondary">✓</span>{% endif %}
+        </td>
+        <td class="text-center col-checkbox text-muted">
+          {% if s[16] %}<span class="badge bg-secondary">✓</span>{% endif %}
+        </td>
+        <td class="col-day text-muted">{{ s[17] or '' }}</td>
+        <td class="col-time text-muted">{{ format_time_12hr(s[18]) }}</td>
+        <td class="col-day text-muted">{{ s[19] or '' }}</td>
+        <td class="col-time text-muted">{{ format_time_12hr(s[20]) }}</td>
+        <td class="text-muted">{{ s[4] }}</td>
+        <td class="text-muted">{{ s[5] }}</td>
+        <td class="text-muted">{{ s[6] }}</td>
+        <td class="col-qr">
+          {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
+          <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'" style="opacity: 0.5;">
+        </td>
+        <td class="text-center col-checkbox text-muted">
+          {% if s[8] %}<span class="badge bg-secondary">B</span>{% endif %}
+        </td>
+        <td class="text-muted">{{ s[10] or '' }}</td>
+        <td class="text-muted">{{ s[11] or 0 }}</td>
+        <td class="text-muted">{{ s[12] or '' }}</td>
+        <td class="text-muted">{{ s[13] or 0 }}</td>
+        <td class="col-actions">
+          <a href="{{ url_for('students_reactivate',sid=s[0]) }}" class="btn btn-outline-success btn-sm" onclick="return confirm('Reactivate student?');">Reactivate</a>
+          <a href="{{ url_for('students_permanent_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete student? This cannot be undone.');">Perm Delete</a>
+        </td>
+      </tr>
+      {% endfor %}
+      {% endif %}
     </tbody>
   </table>
   </div>

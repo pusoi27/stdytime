@@ -941,7 +941,7 @@ This is an automated message. Please do not reply.
             cursor = conn.cursor()
             
             # Get student info
-            cursor.execute('SELECT id, name, photo FROM students WHERE id = ?', (student_id,))
+            cursor.execute('SELECT id, name FROM students WHERE id = ?', (student_id,))
             student = cursor.fetchone()
             
             if not student:
@@ -969,8 +969,7 @@ This is an automated message. Please do not reply.
             return jsonify({
                 'student': {
                     'id': student[0],
-                    'name': student[1],
-                    'photo': student[2]
+                    'name': student[1]
                 },
                 'metrics': {
                     'total_sessions': metrics[0],

@@ -1,6 +1,8 @@
-import sqlite3
-conn = sqlite3.connect('data/kumoclock.db')
-cur = conn.cursor()
-for row in cur.execute('SELECT id, name, photo FROM students ORDER BY id'):
-    print(row)
-conn.close()
+"""
+DEPRECATED: This script is no longer used.
+
+Photo management has been removed from KumoClock.
+Student photos are no longer stored in the database.
+"""
+
+print("This script is deprecated. Photo management has been removed from KumoClock.")

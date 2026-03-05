@@ -1,6 +1,6 @@
 <script>
-const SEAT_LIMIT = 20;
-const SEAT_LIMIT_FULLSCREEN = 20; // Keep same seat count in fullscreen
+const SEAT_LIMIT = 16;
+const SEAT_LIMIT_FULLSCREEN = 16; // 4x4 grid = 16 seats
 const DURATION_LIMITS = { "S1": 30*60, "S2": 60*60 };
 const IDLE_TIMEOUT_MS = 60000; // 1 minute
 const isActiveClassWindow = true; // only dashboard should handle class check-in/out
@@ -37,9 +37,9 @@ function checkIdleState(){
 
 function enterFullscreenMode(){
   isFullscreenMode = true;
-  const col1 = document.querySelector('.col-lg-2');
-  const col2 = document.querySelector('.col-lg-8');
-  const col3 = document.querySelector('.col-lg-2');
+  const col1 = document.getElementById('studentsCol');
+  const col2 = document.getElementById('activeCol');
+  const col3 = document.getElementById('checkedCol');
   
   if(col1) col1.style.display = 'none';
   if(col3) col3.style.display = 'none';
@@ -68,19 +68,17 @@ function exitFullscreenMode(){
   if(!isFullscreenMode) return;
   isFullscreenMode = false;
   
-  const col1 = document.querySelector('.col-12');
-  const hiddenCols = document.querySelectorAll('[style*="display: none"]');
+  const col1 = document.getElementById('activeCol');
+  const leftCol = document.getElementById('studentsCol');
+  const rightCol = document.getElementById('checkedCol');
   
   if(col1){
-    col1.className = 'col-lg-8 col-md-6';
+    col1.className = 'col-lg-8 col-md-6 col-6';
     col1.querySelector('.card').style.height = '';
   }
-  
-  hiddenCols.forEach(col => {
-    if(col.classList.contains('col-lg-2')){
-      col.style.display = '';
-    }
-  });
+
+  if(leftCol) leftCol.style.display = '';
+  if(rightCol) rightCol.style.display = '';
   
   // Exit full screen API
   if(document.fullscreenElement){
@@ -106,31 +104,6 @@ function formatSessionTime(seconds){
   return `${h} h ${m} m`;
 }
 
-function updateAllPhotos(students){
-  console.debug('[dashboard] updateAllPhotos called for', students.length, 'students');
-  students.forEach(s=>{
-    const imgs = document.querySelectorAll(`img[data-sid="${s.id}"]`);
-    console.debug(`[dashboard] updating photos for id=${s.id} name=${s.name} photo=${s.photo} imgs=${imgs.length}`);
-    imgs.forEach(img=>{
-      if(s.photo){
-        const newsrc = `/static/img/students/${s.photo}?v=${Date.now()}`;
-        console.debug('[dashboard] set src for', s.id, newsrc);
-        img.src = newsrc;
-        img.onerror = ()=>{ img.src = '/static/img/default.png'; };
-      }else{
-        // try a few candidate filenames derived from the student name
-        const candidates = [
-          `/static/img/students/${encodeURIComponent(s.name)}.png?v=${Date.now()}`,
-          `/static/img/students/${encodeURIComponent(s.name)}..png?v=${Date.now()}`
-        ];
-        let i=0;
-        img.onerror = ()=>{ i++; if(i<candidates.length) { console.debug('[dashboard] trying candidate', candidates[i]); img.src=candidates[i]; } else { img.src='/static/img/default.png'; } };
-        console.debug('[dashboard] trying candidate', candidates[0]);
-        img.src = candidates[0];
-      }
-    });
-  });
-}
 
 async function fetchDashboardData(){
 
@@ -171,8 +144,6 @@ async function fetchDashboardData(){
   buildSeatGrid(uniqueSessions);
   buildCheckedList(checkedOnly);
   buildAssistantsList(assistants);
-  // After rebuilding DOM, ensure images are refreshed (cache-bust)
-  updateAllPhotos(students);
 }
 // ---------- Column 2 (Assistants) ----------
 function buildAssistantsList(assistants){
@@ -221,21 +192,6 @@ function buildStudentList(data){
       available++;
       const div=document.createElement("div");
       div.className="p-2 border rounded mb-1 hover-bg d-flex align-items-center";
-      // build image element with onerror-driven fallbacks when photo is not set
-      const img=document.createElement('img');
-      img.className='rounded-circle me-2'; img.width=32; img.height=32; img.setAttribute('data-sid', s.id);
-      if(s.photo){
-        img.src = `/static/img/students/${s.photo}?v=${Date.now()}`;
-        img.onerror = ()=>{ img.src = '/static/img/default.png'; };
-      }else{
-        const candidates = [
-          `/static/img/students/${encodeURIComponent(s.name)}.png?v=${Date.now()}`,
-          `/static/img/students/${encodeURIComponent(s.name)}..png?v=${Date.now()}`
-        ];
-        let i=0;
-        img.onerror = ()=>{ i++; if(i<candidates.length) img.src=candidates[i]; else img.src='/static/img/default.png'; };
-        img.src = candidates[0];
-      }
       const info=document.createElement('div'); info.className='flex-fill';
       const badges = [];
       if (s.subject) badges.push(s.subject);
@@ -243,7 +199,6 @@ function buildStudentList(data){
       if (s.paper_ws) badges.push('P');
       const badgeDisplay = badges.length > 0 ? badges.join(', ') : '-';
       info.innerHTML = `<b>${s.name}</b><br><small class="text-muted">${badgeDisplay}</small>`;
-      div.appendChild(img);
       div.appendChild(info);
       div.onclick=async()=>{
         if(confirm("Start session for "+s.name+"?")){
@@ -267,12 +222,11 @@ function buildSeatGrid(activeSessions){
   const seatLimit = isFullscreenMode ? SEAT_LIMIT_FULLSCREEN : SEAT_LIMIT;
   for(let i=0;i<seatLimit;i++){
     const seatLabel="Seat "+(i+1);
-    const col=document.createElement("div"); col.className="col";
+    const col=document.createElement("div"); col.className="";
     const s=activeSessions[i];
     if(s){
       const start=new Date((s.start_time||"").replace(/\u202f|\u2009/g," "));
       const limit=DURATION_LIMITS[s.subject]||1800;
-      const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
       const badges = [];
       if (s.subject) {  // Only add subject badge if subject is not empty
         badges.push(s.subject);
@@ -284,16 +238,15 @@ function buildSeatGrid(activeSessions){
         badges.push('P');
       }
       const badgeText = badges.join(', ');
-      const fontSize = isFullscreenMode ? '34px' : '28px';
+      const fontSize = isFullscreenMode ? '42px' : '32px';
 
       const card=document.createElement("div");
       card.className="card shadow-sm seat-card";
-      card.style.minHeight="155px";
+      card.style.minHeight="200px";
       card.style.display="flex";
       card.style.flexDirection="column";
       card.innerHTML=`
         <div class="d-flex align-items-start p-2">
-          <img src="${photo}" data-sid="${s.id}" class="rounded-circle me-2" width="60" height="60" alt="photo">
           <div class="flex-grow-1">
             <div class="fw-semibold" style="font-size:${fontSize}; line-height:1.2;">${s.name}</div>
           </div>
@@ -359,13 +312,11 @@ function buildCheckedList(data){
   const checked=data.filter(s=>s.status==="checked");
   const ul=document.getElementById("checkedList"); ul.innerHTML="";
     checked.forEach(s=>{
-        const photo = s.photo ? `/static/img/students/${s.photo}?v=${Date.now()}` : '/static/img/default.png';
       // prefer accumulated total_seconds (today) if available, otherwise fall back to last-session duration
       const dur = formatSessionTime(s.total_seconds || s.duration || 0);
     const li=document.createElement("li");
     li.className="list-group-item";
     li.innerHTML=`<div class="d-flex align-items-center">
-      <img src="${photo}" data-sid="${s.id}" class="rounded-circle me-2" width="32" height="32" alt="photo">
       <div><div class="fw-semibold">${s.name}</div>
       <div class="text-success small">${dur}</div></div></div>`;
     ul.appendChild(li);
@@ -381,29 +332,6 @@ if(refreshBtn){
   refreshBtn.addEventListener('click', async (e)=>{
     e.preventDefault();
     console.debug('[dashboard] refresh button clicked');
-    // ask user for path to photos (remember last value in localStorage)
-    const last = localStorage.getItem('photosPath') || '';
-    const path = prompt('Enter path to photos folder (absolute or relative to project):', last);
-    if(path === null) return; // user cancelled
-    localStorage.setItem('photosPath', path);
-    try{
-      const res = await fetch('/api/photos/scan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path })
-      });
-      const j = await res.json().catch(()=>({}));
-      if(!res.ok){
-        console.warn('[dashboard] scan failed', j);
-        alert('Photo scan failed: '+(j.error || res.statusText || 'unknown'));
-      } else {
-        console.debug('[dashboard] scan result', j);
-      }
-    }catch(err){
-      console.error('[dashboard] scan error', err);
-      alert('Error scanning photos: '+err.message);
-    }
-    // always refresh the dashboard data after scan attempt
     fetchDashboardData();
   });
 } else {

@@ -36,11 +36,7 @@
                 <div class="card shadow-sm">
                     <div class="card-body">
                         <div class="row">
-                            <div class="col-md-2">
-                                <img id="studentPhoto" src="" alt="Student Photo" 
-                                     class="img-fluid rounded" style="max-width: 150px;">
-                            </div>
-                            <div class="col-md-10">
+                            <div class="col-md-12">
                                 <h4 id="evalStudentName" class="mb-3">-</h4>
                                 <div class="row">
                                     <div class="col-md-3">
@@ -176,7 +172,6 @@ function loadEvaluation(studentId) {
             
             // Update student info
             document.getElementById('evalStudentName').textContent = student.name;
-            document.getElementById('studentPhoto').src = student.photo ? `/templates_static/img/students/${student.photo}` : '/static/img/placeholder.png';
             
             // Update metrics
             document.getElementById('totalSessionsEval').textContent = metrics.total_sessions;

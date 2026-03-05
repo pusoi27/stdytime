@@ -64,11 +64,10 @@ def register_api_routes(app):
                 "level": s[3],
                 "email": s[4],
                 "phone": s[5],
-                "photo": s[6] if len(s) > 6 else None,
                 "active": s[7] if len(s) > 7 else 0,
                 "book_loaned": s[8] if len(s) > 8 else 0,
                 "paper_ws": s[9] if len(s) > 9 else 0,
-                "has_active_loan": s[14] if len(s) > 14 else 0,
+                "has_active_loan": s[21] if len(s) > 21 else 0,
                 "status": status,
                 "start_time": start_time,
                 "total_seconds": total_seconds,
@@ -130,7 +129,6 @@ def register_api_routes(app):
                 "name": s[1],
                 "subject": s[2],
                 "level": s[3],
-                "photo": s[6] if len(s) > 6 else None,
                 "book_loaned": s[8] if len(s) > 8 else 0,
                 "paper_ws": s[9] if len(s) > 9 else 0,
                 "start_time": start,
@@ -172,10 +170,10 @@ def register_api_routes(app):
                 return jsonify({"error": "Student not found"}), 404
             
             student_name = student[1]  # name is at index 1
-            # Get goals from student tuple: indices after removal of 'level' field
-            # Tuple: (id, name, subject, email, phone, photo, active, book_loaned, paper_ws, math_goal, math_worksheets_per_week, reading_goal, reading_worksheets_per_week)
-            math_goal = student[9] if len(student) > 9 else None
-            reading_goal = student[11] if len(student) > 11 else None
+            # Get goals from student tuple: indices after removal of 'photo' field
+            # Tuple: (id, name, subject, email, phone, active, book_loaned, paper_ws, math_goal, math_worksheets_per_week, reading_goal, reading_worksheets_per_week)
+            math_goal = student[8] if len(student) > 8 else None
+            reading_goal = student[10] if len(student) > 10 else None
             
             # Check if student has goals (both goals cannot be blank)
             # A goal is "filled" if it's not None and has non-whitespace text

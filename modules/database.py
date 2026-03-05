@@ -109,13 +109,11 @@ def init_db():
 
     conn.commit(); conn.close()
 
-    # Ensure `photo` column exists on students table (migration for image filenames)
+    # Ensure additional columns exist on students table (migration for additional fields)
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(students)")
         cols = [r[1] for r in cur.fetchall()]
-        if "photo" not in cols:
-            cur.execute("ALTER TABLE students ADD COLUMN photo TEXT")
         if "whatsapp" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN whatsapp TEXT")
         if "math_goal" not in cols:

@@ -2,6 +2,59 @@
    KumoClock Custom Styles
    ============================================ */
 
+/* Prevent horizontal scrollbar */
+body {
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-screen-container {
+  height: calc(100vh - 56px);
+  padding-top: 0.5rem;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-screen-container .row {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.dashboard-col {
+  min-width: 0;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+
+/* Dashboard cards - minimize padding */
+.card {
+  border: none;
+  border-radius: 0.25rem;
+}
+
+/* Navbar - minimize padding */
+.navbar {
+  padding: 0.25rem 0;
+}
+
+.navbar .container-fluid {
+  padding: 0.25rem 0.5rem;
+}
+
+/* Side columns - compact spacing */
+.col-lg-1 {
+  padding: 0.125rem;
+}
+
+/* Input and form controls - compact */
+.form-control, .form-control-sm {
+  padding: 0.25rem 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
 /* Nested Dropdown Support for Bootstrap 5 */
 .dropdown-submenu {
   position: relative;
@@ -56,7 +109,7 @@
 }
 
 .seat-card:hover {
-  transform: scale(1.05);
+  transform: scale(1.02);
   box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.2) !important;
 }
 
@@ -117,5 +170,70 @@ img.rounded-circle[src*='default.png'] {
   
   .qr-card {
     page-break-inside: avoid;
+  }
+}
+
+/* Dashboard 4x4 Seat Grid - Fixed 4 columns */
+#seatGrid {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0;
+}
+
+#seatGrid .col {
+  width: 100% !important;
+}
+
+@media (min-width: 1400px) {
+  /* Large desktop: maximize seat size */
+  #seatGrid .seat-card {
+    min-height: 220px !important;
+    font-size: 1.1rem;
+  }
+  
+  #seatGrid .timer {
+    font-size: 2.2rem !important;
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1399px) {
+  /* Desktop */
+  #seatGrid .seat-card {
+    min-height: 200px !important;
+    font-size: 1rem;
+  }
+  
+  #seatGrid .timer {
+    font-size: 2rem !important;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  /* Tablet landscape */
+  #seatGrid .seat-card {
+    min-height: 180px !important;
+    font-size: 0.95rem;
+  }
+  
+  #seatGrid .timer {
+    font-size: 1.8rem !important;
+  }
+}
+
+@media (max-width: 991px) {
+  /* Mobile & tablet portrait: 2x8 layout */
+  #seatGrid {
+    gap: 0.5rem !important;
+  }
+  
+  #seatGrid .seat-card {
+    min-height: 150px !important;
+    font-size: 0.9rem;
+  }
+  
+  #seatGrid .timer {
+    font-size: 1.5rem !important;
   }
 }
