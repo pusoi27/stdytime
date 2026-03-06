@@ -195,12 +195,12 @@
           <div class="calendar-cell">
             {% if schedule.calendar[day] and schedule.calendar[day][time_slot] %}
               {% for student in schedule.calendar[day][time_slot] %}
-                <div class="student-badge {{ student.subject|lower }}{% if not student.el and not student.pi %} no-background{% elif student.el %} has-el{% elif student.pi %} has-pi{% endif %}" title="{{ student.name }} - {{ student.subject }} - {{ student.email }}">
+                <a href="{{ url_for('students_edit', sid=student.id, from_calendar=1) }}" class="student-badge {{ student.subject|lower }}{% if not student.el and not student.pi %} no-background{% elif student.el %} has-el{% elif student.pi %} has-pi{% endif %}" title="{{ student.name }} - {{ student.subject }} - {{ student.email }}" style="text-decoration: none; color: inherit;">
                   {{ student.name }}
                   {% if student.el %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;padding:1px 3px;">EL</span>{% endif %}
                   {% if student.pi %}<span class="badge bg-info" style="font-size:0.65rem;padding:1px 3px;">PI</span>{% endif %}
                   {% if student.v %}<span class="badge bg-success" style="font-size:0.65rem;padding:1px 3px;">V</span>{% endif %}
-                </div>
+                </a>
               {% endfor %}
             {% else %}
               <span class="empty-slot">-</span>
@@ -241,12 +241,12 @@
         <h5 class="mb-3"><i class="bi bi-wifi"></i> Virtual Students</h5>
         <div style="display: flex; flex-wrap: wrap; gap: 10px;">
           {% for student in schedule.virtual_students %}
-            <div class="student-badge {{ student.subject|lower }}{% if not student.el and not student.pi %} no-background{% elif student.el %} has-el{% elif student.pi %} has-pi{% endif %}" title="{{ student.name }} - {{ student.subject }} - {{ student.email }}">
+            <a href="{{ url_for('students_edit', sid=student.id, from_calendar=1) }}" class="student-badge {{ student.subject|lower }}{% if not student.el and not student.pi %} no-background{% elif student.el %} has-el{% elif student.pi %} has-pi{% endif %}" title="{{ student.name }} - {{ student.subject }} - {{ student.email }}" style="text-decoration: none; color: inherit;">
               {{ student.name }}
               {% if student.el %}<span class="badge bg-warning text-dark" style="font-size:0.65rem;padding:1px 3px;">EL</span>{% endif %}
               {% if student.pi %}<span class="badge bg-info" style="font-size:0.65rem;padding:1px 3px;">PI</span>{% endif %}
               <span class="badge bg-success" style="font-size:0.65rem;padding:1px 3px;">V</span>
-            </div>
+            </a>
           {% endfor %}
         </div>
       </div>
@@ -254,14 +254,6 @@
   {% endif %}
 </div>
 
-<script>
-// Add click handler to student badges for quick info
-document.querySelectorAll('.student-badge').forEach(badge => {
-  badge.addEventListener('click', function() {
-    const title = this.getAttribute('title');
-    alert(title);
-  });
-});
-</script>
+
 
 {% endblock %}

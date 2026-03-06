@@ -101,6 +101,17 @@
 <div class="container-fluid mt-3 px-2 px-md-3">
   <h4 class="mb-2 text-primary">Student Database</h4>
 
+  <!-- Duplicate Names Alert -->
+  {% if has_duplicates %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      <i class="bi bi-exclamation-triangle-fill"></i> 
+      <strong>Duplicate Names Detected!</strong> 
+      {{ duplicate_summary|length }} student name(s) appear more than once in your database.
+      <a href="{{ url_for('students_duplicates') }}" class="alert-link"><strong>View and resolve duplicates</strong></a>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  {% endif %}
+
   <!-- Add button -->
   <div class="mb-2">
     <a href="{{ url_for('students_add') }}" class="btn btn-success btn-sm">Add Student</a>

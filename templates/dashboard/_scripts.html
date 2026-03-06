@@ -183,34 +183,86 @@ function buildAssistantsList(assistants){
   });
 }
 // ---------- Column 1 ----------
-function buildStudentList(data){
-  const list=document.getElementById("studentList");
-  list.innerHTML="";
-  let available=0;
-  data.forEach(s=>{
-    if(s.status==="registered"){
-      available++;
-      const div=document.createElement("div");
-      div.className="p-2 border rounded mb-1 hover-bg d-flex align-items-center";
-      const info=document.createElement('div'); info.className='flex-fill';
+  function buildStudentList(data){
+    const list=document.getElementById("studentList");
+    list.innerHTML="";
+    
+    // Get today's day name
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const today = days[new Date().getDay()];
+    
+    // Filter registered students
+    const registeredStudents = data.filter(s => s.status === "registered");
+    
+    // Separate students into scheduled for today and others
+    const scheduledToday = [];
+    const others = [];
+    
+    registeredStudents.forEach(s => {
+      // Check if scheduled for today
+      const isScheduledToday = (s.day1 === today || s.day2 === today);
+      
+      if (isScheduledToday) {
+        // Get the time for today
+        let time = null;
+        if (s.day1 === today) time = s.day1_time;
+        else if (s.day2 === today) time = s.day2_time;
+        
+        scheduledToday.push({ student: s, time: time });
+      } else {
+        others.push(s);
+      }
+    });
+    
+    // Sort scheduled students by time
+    scheduledToday.sort((a, b) => {
+      if (!a.time || !b.time) return 0;
+      return a.time.localeCompare(b.time);
+    });
+    
+    // Sort others alphabetically by name
+    others.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Helper function to create student entry
+    function createStudentEntry(s, timeDisplay = null) {
+      const div = document.createElement("div");
+      div.className = "p-2 border rounded mb-1 hover-bg d-flex align-items-center";
+      const info = document.createElement('div');
+      info.className = 'flex-fill';
       const badges = [];
       if (s.subject) badges.push(s.subject);
       if (s.has_active_loan) badges.push('B');
       if (s.paper_ws) badges.push('P');
       const badgeDisplay = badges.length > 0 ? badges.join(', ') : '-';
-      info.innerHTML = `<b>${s.name}</b><br><small class="text-muted">${badgeDisplay}</small>`;
+      
+      const nameDisplay = timeDisplay 
+        ? `<b>${s.name}</b> <span class="text-primary">(${timeDisplay})</span>`
+        : `<b>${s.name}</b>`;
+      
+      info.innerHTML = `${nameDisplay}<br><small class="text-muted">${badgeDisplay}</small>`;
       div.appendChild(info);
-      div.onclick=async()=>{
-        if(confirm("Start session for "+s.name+"?")){
-          await fetch(`/api/students/start/${s.id}`,{method:'POST'});
+      div.onclick = async () => {
+        if (confirm("Start session for " + s.name + "?")) {
+          await fetch(`/api/students/start/${s.id}`, {method: 'POST'});
           fetchDashboardData();
         }
       };
-      list.appendChild(div);
+      return div;
     }
-  });
-  document.getElementById("registeredCount").innerText=
-    `${available} students available`;
+    
+    // Add scheduled students first
+    scheduledToday.forEach(({student: s, time}) => {
+      list.appendChild(createStudentEntry(s, time));
+    });
+    
+    // Add remaining students
+    others.forEach(s => {
+      list.appendChild(createStudentEntry(s));
+    });
+    
+    document.getElementById("registeredCount").innerText=
+      `${registeredStudents.length} students available`;
+
 }
 
 // ---------- Column 2 ----------
@@ -220,6 +272,7 @@ function buildSeatGrid(activeSessions){
   document.getElementById("activeCount").innerText=
     `(${activeSessions.length} active)`;
   const seatLimit = isFullscreenMode ? SEAT_LIMIT_FULLSCREEN : SEAT_LIMIT;
+  const seatHeight = isFullscreenMode ? "180px" : "170px";
   for(let i=0;i<seatLimit;i++){
     const seatLabel="Seat "+(i+1);
     const col=document.createElement("div"); col.className="";
@@ -242,7 +295,8 @@ function buildSeatGrid(activeSessions){
 
       const card=document.createElement("div");
       card.className="card shadow-sm seat-card";
-      card.style.minHeight="200px";
+      card.style.minHeight=seatHeight;
+      card.style.height=seatHeight;
       card.style.display="flex";
       card.style.flexDirection="column";
       card.innerHTML=`
@@ -272,11 +326,16 @@ function buildSeatGrid(activeSessions){
         tEl.classList.toggle("text-success",diff<=limit);
       },1000);
     }else{
-      col.innerHTML=`<div class="card p-3 text-center shadow-sm seat-empty">
-          <div class="fw-light text-muted" style="height:90px;
-             display:flex;align-items:center;justify-content:center;font-size:0.85em;">
-            ${seatLabel} Empty
-          </div></div>`;
+      const emptyCard = document.createElement("div");
+      emptyCard.className = "card shadow-sm seat-card seat-empty";
+      emptyCard.style.minHeight = seatHeight;
+      emptyCard.style.height = seatHeight;
+      emptyCard.style.display = "flex";
+      emptyCard.style.alignItems = "center";
+      emptyCard.style.justifyContent = "center";
+      emptyCard.style.textAlign = "center";
+      emptyCard.innerHTML = `<div class="fw-light text-muted" style="font-size:0.9em;">${seatLabel} Empty</div>`;
+      col.appendChild(emptyCard);
       grid.appendChild(col);
     }
   }
@@ -324,25 +383,6 @@ function buildCheckedList(data){
   document.getElementById("checkedCount").innerText=
     `${checked.length} students checked out today`;
 }
-
-// ---------- Search + Refresh ----------
-// wire refresh to rebuild and then explicitly update image sources
-const refreshBtn = document.getElementById("refreshList");
-if(refreshBtn){
-  refreshBtn.addEventListener('click', async (e)=>{
-    e.preventDefault();
-    console.debug('[dashboard] refresh button clicked');
-    fetchDashboardData();
-  });
-} else {
-  console.warn('[dashboard] refreshList button not found');
-}
-document.getElementById("searchInput").addEventListener("input",e=>{
-  const term=e.target.value.toLowerCase();
-  document.querySelectorAll("#studentList > div").forEach(div=>{
-    div.style.display=div.innerText.toLowerCase().includes(term)?"":"none";
-  });
-});
 
 fetchDashboardData();
 

@@ -11,11 +11,41 @@ def register_student_routes(app, upload_folder):
     
     @app.route("/students")
     def students_list():
+        # Get duplicate information to display alerts
+        duplicate_summary = student_manager.get_duplicate_summary()
+        has_duplicates = student_manager.has_duplicate_names()
+        
         return render_template(
             "students.html",
             students=student_manager.get_all_students(),
             deleted_students=student_manager.get_deleted_students(),
+            has_duplicates=has_duplicates,
+            duplicate_summary=duplicate_summary,
         )
+
+    @app.route("/students/duplicates")
+    def students_duplicates():
+        """Display all duplicate student names with their details."""
+        duplicate_summary = student_manager.get_duplicate_summary()
+        return render_template(
+            "students_duplicates.html",
+            duplicate_summary=duplicate_summary,
+            has_duplicates=len(duplicate_summary) > 0,
+        )
+
+    @app.route("/api/students/duplicates")
+    def api_get_duplicates():
+        """API endpoint to get duplicate student names (JSON response)."""
+        from flask import jsonify
+        duplicate_summary = student_manager.get_duplicate_summary()
+        has_duplicates = len(duplicate_summary) > 0
+        
+        return jsonify({
+            'success': True,
+            'has_duplicates': has_duplicates,
+            'total_duplicate_names': len(duplicate_summary),
+            'duplicates': duplicate_summary
+        })
 
     @app.route("/students/add", methods=["GET", "POST"])
     def students_add():
@@ -83,11 +113,16 @@ def register_student_routes(app, upload_folder):
                 day2_time=request.form.get("day2_time", ""),
             )
             flash("Student updated.", "info")
+            # Check if came from calendar
+            from_calendar = request.args.get('from_calendar')
+            if from_calendar:
+                return redirect(url_for('center_calendar'))
             return redirect(url_for("students_list"))
         
         # Get instructor profile for class hours
         profile = instructor_profile_manager.get_instructor_profile()
-        return render_template("student_form.html", action="Edit", student=stu, profile=profile)
+        from_calendar = request.args.get('from_calendar')
+        return render_template("student_form.html", action="Edit", student=stu, profile=profile, from_calendar=from_calendar)
 
     @app.route("/students/delete/<int:sid>")
     def students_delete(sid):

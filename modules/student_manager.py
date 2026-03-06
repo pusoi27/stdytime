@@ -193,3 +193,82 @@ def export_csv(path):
         writer=csv.writer(f)
         writer.writerow(headers)
         writer.writerows(data)
+
+
+def find_duplicates_by_name(name):
+    """Find all students with a given name (case-insensitive, whitespace-trimmed)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, name, email, phone, subject, day1, day1_time, day2, day2_time
+            FROM students
+            WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+            ORDER BY id
+        """, (name,))
+        return c.fetchall()
+
+
+def get_duplicate_names():
+    """Get all student names that appear more than once in the student list."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT LOWER(TRIM(name)) as name_key, COUNT(*) as count
+            FROM students
+            WHERE active = 1
+            GROUP BY LOWER(TRIM(name))
+            HAVING COUNT(*) > 1
+            ORDER BY count DESC, name_key
+        """)
+        return c.fetchall()
+
+
+def get_duplicate_summary():
+    """Get a detailed summary of all duplicate names with their student information."""
+    duplicates = get_duplicate_names()
+    summary = []
+    
+    for name_key, count in duplicates:
+        # Find the original name (with correct casing) and get all students with this name
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT id, name, email, phone, subject, day1, day1_time, day2, day2_time, el, pi, v
+                FROM students
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+                AND active = 1
+                ORDER BY id
+            """, (name_key,))
+            students = c.fetchall()
+            
+            if students:
+                original_name = students[0][1]  # Get the actual name with correct casing
+                summary.append({
+                    'name': original_name,
+                    'count': count,
+                    'students': [
+                        {
+                            'id': s[0],
+                            'name': s[1],
+                            'email': s[2],
+                            'phone': s[3],
+                            'subject': s[4],
+                            'day1': s[5],
+                            'day1_time': s[6],
+                            'day2': s[7],
+                            'day2_time': s[8],
+                            'el': s[9],
+                            'pi': s[10],
+                            'v': s[11]
+                        }
+                        for s in students
+                    ]
+                })
+    
+    return summary
+
+
+def has_duplicate_names():
+    """Check if there are any duplicate names in the active student list."""
+    duplicates = get_duplicate_names()
+    return len(duplicates) > 0

@@ -373,6 +373,32 @@ _auto_generate_missing_qr_codes()
 
 
 # ================================================================
+#  Exit/Shutdown Route
+# ================================================================
+@app.route("/exit", methods=["GET", "POST"])
+def exit_app():
+    """Handle application exit/shutdown with graceful browser window closure."""
+    import sys
+    import threading
+    
+    print("\n[EXIT] User initiated application shutdown...")
+    profiler.print_summary()
+    
+    # Schedule shutdown after response is sent (1 second delay)
+    def delayed_shutdown():
+        import time
+        time.sleep(1)
+        print("[EXIT] Closing application...")
+        sys.exit(0)
+    
+    shutdown_thread = threading.Thread(target=delayed_shutdown, daemon=True)
+    shutdown_thread.start()
+    
+    # Return exit page with JavaScript to close the window
+    return render_template("exit.html")
+
+
+# ================================================================
 #  Error Handling
 # ================================================================
 @app.errorhandler(404)

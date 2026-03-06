@@ -180,6 +180,12 @@ img.rounded-circle[src*='default.png'] {
   width: 100% !important;
   max-width: 100% !important;
   min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#overflowStudents {
+  flex-shrink: 0;
 }
 
 #seatGrid .col {
@@ -189,19 +195,7 @@ img.rounded-circle[src*='default.png'] {
 @media (min-width: 1400px) {
   /* Large desktop: maximize seat size */
   #seatGrid .seat-card {
-    min-height: 220px !important;
-    font-size: 1.1rem;
-  }
-  
-  #seatGrid .timer {
-    font-size: 2.2rem !important;
-  }
-}
-
-@media (min-width: 1200px) and (max-width: 1399px) {
-  /* Desktop */
-  #seatGrid .seat-card {
-    min-height: 200px !important;
+    min-height: 180px !important;
     font-size: 1rem;
   }
   
@@ -210,15 +204,27 @@ img.rounded-circle[src*='default.png'] {
   }
 }
 
-@media (min-width: 992px) and (max-width: 1199px) {
-  /* Tablet landscape */
+@media (min-width: 1200px) and (max-width: 1399px) {
+  /* Desktop */
   #seatGrid .seat-card {
-    min-height: 180px !important;
+    min-height: 170px !important;
     font-size: 0.95rem;
   }
   
   #seatGrid .timer {
     font-size: 1.8rem !important;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  /* Tablet landscape */
+  #seatGrid .seat-card {
+    min-height: 160px !important;
+    font-size: 0.9rem;
+  }
+  
+  #seatGrid .timer {
+    font-size: 1.6rem !important;
   }
 }
 
@@ -229,11 +235,11 @@ img.rounded-circle[src*='default.png'] {
   }
   
   #seatGrid .seat-card {
-    min-height: 150px !important;
-    font-size: 0.9rem;
+    min-height: 140px !important;
+    font-size: 0.85rem;
   }
   
   #seatGrid .timer {
-    font-size: 1.5rem !important;
+    font-size: 1.4rem !important;
   }
 }
