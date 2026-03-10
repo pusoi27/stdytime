@@ -5,6 +5,88 @@ import sqlite3
 from modules.database import DB_PATH
 from datetime import datetime
 
+
+def _has_isbn(isbn, isbn13) -> bool:
+    """Return True when either ISBN-10 or ISBN-13 is present."""
+    return bool((isbn and str(isbn).strip()) or (isbn13 and str(isbn13).strip()))
+
+
+def _safe_non_negative_int(value, default=0) -> int:
+    """Parse value as a non-negative integer with fallback."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(parsed, 0)
+
+
+def _sync_student_book_loaned(cursor, student_id: int):
+    """Sync students.book_loaned based on current open book loans."""
+    if not student_id:
+        return
+    cursor.execute(
+        """
+        UPDATE students
+           SET book_loaned = CASE WHEN EXISTS (
+               SELECT 1
+                 FROM books
+                WHERE borrower_id = ?
+                  AND available = 0
+           ) THEN 1 ELSE 0 END
+         WHERE id = ?
+        """,
+        (student_id, student_id),
+    )
+
+
+def sync_all_students_book_status():
+    """Sync book_loaned status for all students based on current book loans.
+    This should be called to fix any inconsistencies.
+    Uses the book_loans table as the source of truth."""
+    ensure_book_loans_table()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        # First, reset all students to book_loaned = 0
+        c.execute("UPDATE students SET book_loaned = 0")
+        
+        # Then set book_loaned = 1 for students with active loans (based on book_loans table)
+        c.execute("""
+            UPDATE students
+            SET book_loaned = 1
+            WHERE id IN (
+                SELECT DISTINCT student_id
+                FROM book_loans
+                WHERE return_date IS NULL
+            )
+        """)
+        
+        # Also ensure books table is synced with book_loans table
+        # Set borrower_id and available based on active loans
+        c.execute("""
+            UPDATE books
+            SET borrower_id = NULL, available = 1
+            WHERE id NOT IN (
+                SELECT book_id FROM book_loans WHERE return_date IS NULL
+            )
+        """)
+        
+        c.execute("""
+            UPDATE books
+            SET borrower_id = (
+                SELECT student_id FROM book_loans
+                WHERE book_loans.book_id = books.id
+                  AND book_loans.return_date IS NULL
+                LIMIT 1
+            ),
+            available = 0
+            WHERE id IN (
+                SELECT book_id FROM book_loans WHERE return_date IS NULL
+            )
+        """)
+        
+        conn.commit()
+        return c.rowcount
+
 def get_books():
     """Get all books with all columns."""
     with sqlite3.connect(DB_PATH) as conn:
@@ -31,6 +113,15 @@ def get_book(book_id):
 
 def add_book(title, author, publisher, isbn=None, isbn13=None, available=1, reading_level=None, copies=1):
     """Add a new book to the database."""
+    copies = _safe_non_negative_int(copies, default=1)
+
+    # Business rule: zero copies => no ISBN data and unavailable
+    if copies == 0:
+        isbn = None
+        isbn13 = None
+
+    available = 1 if (copies > 0 and _has_isbn(isbn, isbn13)) else 0
+
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""
@@ -83,6 +174,37 @@ def update_book(book_id, title=None, author=None, publisher=None, isbn=None, isb
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute(query, params)
+
+        # Normalize state after update to enforce inventory rules.
+        row = c.execute(
+            "SELECT isbn, isbn13, copies, borrower_id FROM books WHERE id = ?",
+            (book_id,),
+        ).fetchone()
+
+        if row:
+            current_isbn, current_isbn13, current_copies, current_borrower_id = row
+            current_copies = _safe_non_negative_int(current_copies, default=0)
+
+            if current_copies == 0:
+                # Required rule: zero copies => clear ISBNs and force unavailable
+                c.execute(
+                    """
+                    UPDATE books
+                       SET copies = 0,
+                           isbn = NULL,
+                           isbn13 = NULL,
+                           available = 0
+                     WHERE id = ?
+                    """,
+                    (book_id,),
+                )
+            else:
+                desired_available = 1 if (_has_isbn(current_isbn, current_isbn13) and not current_borrower_id) else 0
+                c.execute(
+                    "UPDATE books SET copies = ?, available = ? WHERE id = ?",
+                    (current_copies, desired_available, book_id),
+                )
+
         conn.commit()
         return c.rowcount > 0
 
@@ -105,12 +227,24 @@ def enforce_isbn_availability_rule():
     """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
+        # Required rule: when copies is zero, clear ISBN fields and force unavailable
+        c.execute(
+            """
+            UPDATE books
+               SET copies = 0,
+                   isbn = NULL,
+                   isbn13 = NULL,
+                   available = 0
+             WHERE COALESCE(copies, 0) <= 0
+            """
+        )
         c.execute(
             """
             UPDATE books
                SET available = 0
              WHERE (isbn IS NULL OR TRIM(isbn) = '')
                AND (isbn13 IS NULL OR TRIM(isbn13) = '')
+               AND COALESCE(copies, 0) > 0
             """
         )
         c.execute(
@@ -120,6 +254,7 @@ def enforce_isbn_availability_rule():
              WHERE (available IS NULL OR available = 0)
                AND ( (isbn IS NOT NULL AND TRIM(isbn) != '')
                      OR (isbn13 IS NOT NULL AND TRIM(isbn13) != '') )
+               AND COALESCE(copies, 0) > 0
                AND (borrower_id IS NULL)
             """
         )
@@ -165,6 +300,7 @@ def loan_book(book_id: int, student_id: int):
             """,
             (book_id, student_id, checkout_date)
         )
+        _sync_student_book_loaned(c, student_id)
         conn.commit()
         return checkout_date
 
@@ -175,6 +311,11 @@ def return_book(book_id: int):
     return_date = datetime.utcnow().isoformat()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
+        borrower_row = c.execute(
+            "SELECT borrower_id FROM books WHERE id = ?",
+            (book_id,),
+        ).fetchone()
+        borrower_id = borrower_row[0] if borrower_row else None
         c.execute(
             "UPDATE books SET available = 1, borrower_id = NULL WHERE id = ?",
             (book_id,)
@@ -193,6 +334,7 @@ def return_book(book_id: int):
             """,
             (return_date, book_id)
         )
+        _sync_student_book_loaned(c, borrower_id)
         conn.commit()
         return return_date
 
@@ -220,6 +362,138 @@ def search_books(query=None, level=None, available_only=False):
         c = conn.cursor()
         c.execute(sql, params)
         return c.fetchall()
+
+
+def get_loaned_books():
+    """Get all currently loaned books with student information.
+    Returns list of tuples: (student_name, book_title, checkout_date, student_id)
+    Ordered by student name, then checkout date.
+    """
+    ensure_book_loans_table()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT s.name, b.title, bl.checkout_date, s.id
+            FROM book_loans bl
+            JOIN books b ON bl.book_id = b.id
+            JOIN students s ON bl.student_id = s.id
+            WHERE bl.return_date IS NULL
+            ORDER BY s.name, bl.checkout_date
+        """)
+        return c.fetchall()
+
+
+def get_loaned_books_detailed():
+    """Get all currently loaned books with per-row clear eligibility.
+
+    The `show_clear` flag is True only when total configured copies for a title
+    are lower than active loans for that same title.
+    """
+    ensure_book_loans_table()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        loan_rows = c.execute(
+            """
+            SELECT s.name, b.title, bl.checkout_date, s.id, b.id, bl.id
+            FROM book_loans bl
+            JOIN books b ON bl.book_id = b.id
+            JOIN students s ON bl.student_id = s.id
+            WHERE bl.return_date IS NULL
+            ORDER BY s.name, bl.checkout_date
+            """
+        ).fetchall()
+
+        # Total configured copies per title
+        copies_rows = c.execute(
+            """
+            SELECT lower(trim(COALESCE(title, ''))) AS title_key,
+                   COALESCE(SUM(COALESCE(copies, 0)), 0) AS total_copies
+              FROM books
+             GROUP BY lower(trim(COALESCE(title, '')))
+            """
+        ).fetchall()
+        copies_by_title = {row[0]: row[1] for row in copies_rows}
+
+        # Active loans per title
+        active_loan_rows = c.execute(
+            """
+            SELECT lower(trim(COALESCE(b.title, ''))) AS title_key,
+                   COUNT(*) AS active_loans
+              FROM book_loans bl
+              JOIN books b ON bl.book_id = b.id
+             WHERE bl.return_date IS NULL
+             GROUP BY lower(trim(COALESCE(b.title, '')))
+            """
+        ).fetchall()
+        active_loans_by_title = {row[0]: row[1] for row in active_loan_rows}
+
+        detailed = []
+        for student_name, book_title, checkout_date, student_id, book_id, loan_id in loan_rows:
+            title_key = (book_title or '').strip().lower()
+            total_copies = int(copies_by_title.get(title_key, 0) or 0)
+            active_loans = int(active_loans_by_title.get(title_key, 0) or 0)
+
+            detailed.append({
+                'student_name': student_name,
+                'book_title': book_title,
+                'checkout_date': checkout_date,
+                'student_id': student_id,
+                'book_id': book_id,
+                'loan_id': loan_id,
+                'show_clear': total_copies < active_loans,
+            })
+
+        return detailed
+
+
+def clear_active_loan(book_id: int, student_id: int):
+    """Clear an active loan for a specific student/book pair."""
+    ensure_book_loans_table()
+    return_date = datetime.utcnow().isoformat()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+
+        open_loan = c.execute(
+            """
+            SELECT id
+            FROM book_loans
+            WHERE book_id = ?
+              AND student_id = ?
+              AND return_date IS NULL
+            ORDER BY checkout_date DESC
+            LIMIT 1
+            """,
+            (book_id, student_id),
+        ).fetchone()
+
+        if not open_loan:
+            return None
+
+        loan_id = open_loan[0]
+        c.execute(
+            "UPDATE book_loans SET return_date = ? WHERE id = ?",
+            (return_date, loan_id),
+        )
+
+        # Refresh book availability after clearing the loan
+        book_row = c.execute(
+            "SELECT isbn, isbn13, copies FROM books WHERE id = ?",
+            (book_id,),
+        ).fetchone()
+
+        if book_row:
+            isbn, isbn13, copies = book_row
+            copies = _safe_non_negative_int(copies, default=0)
+            available = 1 if (copies > 0 and _has_isbn(isbn, isbn13)) else 0
+            c.execute(
+                "UPDATE books SET borrower_id = NULL, available = ? WHERE id = ?",
+                (available, book_id),
+            )
+
+        _sync_student_book_loaned(c, student_id)
+        conn.commit()
+        return return_date
 
 
 def find_book_by_title(title: str):

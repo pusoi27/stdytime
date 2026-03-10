@@ -1,6 +1,7 @@
 # routes/api.py
 from flask import jsonify, request
 from modules import student_manager, assistant_manager, timer_manager
+from modules import server_cache
 from modules.database import DB_PATH
 from modules.utils import duration_seconds, time_now
 from datetime import datetime
@@ -10,6 +11,7 @@ import sqlite3
 active_students_cache = {}  # sid -> student dict (only active)
 checked_out_cache = {}
 selected_assistants_cache = []  # List of dicts for assistants on duty (legacy; DB is source of truth)
+STUDENTS_LIST_CACHE_KEY = server_cache.STUDENTS_LIST_CACHE_KEY
 
 def register_api_routes(app):
     """Register API/AJAX routes."""
@@ -17,81 +19,124 @@ def register_api_routes(app):
     @app.route("/api/students/list")
     def api_students_list():
         """Return students with computed status: registered | active | checked."""
-        students = student_manager.get_all_students()
+        def _build_students_list_payload():
+            students = student_manager.get_all_students()
 
-        with sqlite3.connect(DB_PATH) as conn:
-            c = conn.cursor()
-            active_rows = c.execute(
-                "SELECT student_id, start_time FROM sessions WHERE end_time IS NULL"
-            ).fetchall()
-            active_map = {sid: start for sid, start in active_rows}
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                active_rows = c.execute(
+                    "SELECT student_id, start_time FROM sessions WHERE end_time IS NULL"
+                ).fetchall()
+                active_map = {sid: start for sid, start in active_rows}
 
-            today = datetime.now().date().isoformat()
-            today_rows = c.execute(
-                "SELECT student_id, SUM(duration) FROM sessions WHERE DATE(start_time)=? AND end_time IS NOT NULL GROUP BY student_id",
-                (today,),
-            ).fetchall()
-            today_sum = {sid: total or 0 for sid, total in today_rows}
+                today = datetime.now().date().isoformat()
+                today_rows = c.execute(
+                    "SELECT student_id, SUM(duration) FROM sessions WHERE DATE(start_time)=? AND end_time IS NOT NULL GROUP BY student_id",
+                    (today,),
+                ).fetchall()
+                today_sum = {sid: total or 0 for sid, total in today_rows}
 
-            latest_rows = c.execute(
-                "SELECT student_id, duration FROM sessions WHERE end_time IS NOT NULL ORDER BY id DESC"
-            ).fetchall()
-            latest_duration = {}
-            for sid, dur in latest_rows:
-                if sid not in latest_duration:
-                    latest_duration[sid] = dur
+                latest_rows = c.execute(
+                    "SELECT student_id, duration FROM sessions WHERE end_time IS NOT NULL ORDER BY id DESC"
+                ).fetchall()
+                latest_duration = {}
+                for sid, dur in latest_rows:
+                    if sid not in latest_duration:
+                        latest_duration[sid] = dur
 
+            result = []
+            for s in students:
+                sid = s[0]
+                status = "registered"
+                start_time = None
+                total_seconds = None
+                dur = latest_duration.get(sid)
+
+                if sid in active_map:
+                    status = "active"
+                    start_time = active_map[sid]
+                elif sid in today_sum:
+                    status = "checked"
+                    total_seconds = today_sum.get(sid, 0)
+
+                student_dict = {
+                    "id": sid,
+                    "name": s[1],
+                    "subject": s[2],
+                    "level": s[3],
+                    "email": s[4],
+                    "phone": s[5],
+                    "active": s[7] if len(s) > 7 else 0,
+                    "book_loaned": s[8] if len(s) > 8 else 0,
+                    "paper_ws": s[9] if len(s) > 9 else 0,
+                    "day1": s[17] if len(s) > 17 else None,
+                    "day2": s[19] if len(s) > 19 else None,
+                    "day1_time": s[18] if len(s) > 18 else None,
+                    "day2_time": s[20] if len(s) > 20 else None,
+                    "status": status,
+                    "start_time": start_time,
+                    "total_seconds": total_seconds,
+                    "duration": dur,
+                }
+                result.append(student_dict)
+            return result
+
+        result = server_cache.get_or_set(
+            STUDENTS_LIST_CACHE_KEY,
+            _build_students_list_payload,
+            policy="checkin",
+        )
+
+        # Keep legacy in-memory helper cache synchronized for dashboard templates.
         active_students_cache.clear()
-        result = []
-        for s in students:
-            sid = s[0]
-            status = "registered"
-            start_time = None
-            total_seconds = None
-            dur = latest_duration.get(sid)
+        for item in result:
+            if item.get("status") == "active":
+                active_students_cache[item["id"]] = item
 
-            if sid in active_map:
-                status = "active"
-                start_time = active_map[sid]
-            elif sid in today_sum:
-                status = "checked"
-                total_seconds = today_sum.get(sid, 0)
+        return jsonify(result)
 
-            student_dict = {
-                "id": sid,
-                "name": s[1],
-                "subject": s[2],
-                "level": s[3],
-                "email": s[4],
-                "phone": s[5],
-                "active": s[7] if len(s) > 7 else 0,
-                "book_loaned": s[8] if len(s) > 8 else 0,
-                "paper_ws": s[9] if len(s) > 9 else 0,
-                "has_active_loan": s[21] if len(s) > 21 else 0,
-                "day1": s[17] if len(s) > 17 else None,
-                "day2": s[19] if len(s) > 19 else None,
-                "day1_time": s[18] if len(s) > 18 else None,
-                "day2_time": s[20] if len(s) > 20 else None,
-                "status": status,
-                "start_time": start_time,
-                "total_seconds": total_seconds,
-                "duration": dur,
+    @app.route("/api/students/profile-goals/<int:sid>")
+    def api_student_profile_goals(sid):
+        """Return static student profile/goals payload with long-lived cache policy."""
+        cache_key = server_cache.student_goal_cache_key(sid)
+
+        def _build_profile_goals_payload():
+            profile = student_manager.get_student_static_profile(sid)
+            if not profile:
+                return None
+            return {
+                "id": profile.get("id"),
+                "name": profile.get("name"),
+                "subject": profile.get("subject"),
+                "math_goal": profile.get("math_goal"),
+                "math_ws_per_week": profile.get("math_ws_per_week"),
+                "reading_goal": profile.get("reading_goal"),
+                "reading_ws_per_week": profile.get("reading_ws_per_week"),
+                "day1": profile.get("day1"),
+                "day2": profile.get("day2"),
+                "day1_time": profile.get("day1_time"),
+                "day2_time": profile.get("day2_time"),
             }
 
-            if status == "active":
-                active_students_cache[sid] = student_dict
-
-            result.append(student_dict)
-        return jsonify(result)
+        payload = server_cache.get_or_set(
+            cache_key,
+            _build_profile_goals_payload,
+            policy="student_goal",
+        )
+        if payload is None:
+            return jsonify({"error": "Student not found"}), 404
+        return jsonify(payload)
 
     @app.route("/api/students/start/<int:sid>", methods=["POST"])
     def api_students_start(sid):
         timer_manager.start_session(sid)
+        server_cache.invalidate(STUDENTS_LIST_CACHE_KEY)
         return jsonify({"status": "started"})
 
     @app.route("/api/students/stop/<int:sid>", methods=["POST"])
     def api_students_stop(sid):
         timer_manager.stop_session(sid)
+        server_cache.invalidate(STUDENTS_LIST_CACHE_KEY)
         return jsonify({"status": "stopped"})
 
     @app.route("/api/sessions/active")
@@ -201,6 +246,7 @@ def register_api_routes(app):
                 # Stop the session (check out)
                 timer_manager.stop_session(student_id)
                 active_students_cache.pop(student_id, None)
+                server_cache.invalidate(STUDENTS_LIST_CACHE_KEY)
                 return jsonify({
                     "action": "checked_out",
                     "student_id": student_id,
@@ -209,6 +255,7 @@ def register_api_routes(app):
             else:
                 # Start a new session
                 timer_manager.start_session(student_id)
+                server_cache.invalidate(STUDENTS_LIST_CACHE_KEY)
                 return jsonify({
                     "action": "started",
                     "student_id": student_id,
@@ -245,33 +292,64 @@ def register_api_routes(app):
         active_students_cache.clear()
         return jsonify({"deleted": deleted, "date": today})
 
+    @app.route("/api/assistants/profiles")
+    def api_assistants_profiles():
+        """Return assistant static profile list with longer TTL lane."""
+        def _build_profiles_payload():
+            rows = assistant_manager.get_all_assistants()
+            return [
+                dict(
+                    id=a[0],
+                    name=a[1],
+                    role=a[2] if len(a) > 2 else "",
+                    email=a[3] if len(a) > 3 else "",
+                    phone=a[4] if len(a) > 4 else "",
+                )
+                for a in rows
+            ]
+
+        payload = server_cache.get_or_set(
+            server_cache.ASSISTANTS_PROFILE_LIST_CACHE_KEY,
+            _build_profiles_payload,
+            policy="assistant_profile",
+        )
+        return jsonify(payload)
+
     @app.route("/api/assistants/list")
     def api_assistants_list():
         """Return all assistants with on-duty status and start time.
         DB is the source of truth: an "open" assistant_sessions row (end_time NULL) => on duty.
         """
-        assistants = assistant_manager.get_all_assistants()
-        with sqlite3.connect(DB_PATH) as conn:
-            c = conn.cursor()
-            open_rows = c.execute(
-                "SELECT assistant_id, start_time FROM assistant_sessions WHERE end_time IS NULL"
-            ).fetchall()
-        open_map = {aid: start for (aid, start) in open_rows}
-        result = []
-        for a in assistants:
-            aid = a[0]
-            result.append(
-                dict(
-                    id=aid,
-                    name=a[1],
-                    role=a[2] if len(a) > 2 else "",
-                    email=a[3] if len(a) > 3 else "",
-                    phone=a[4] if len(a) > 4 else "",
-                    on_duty=aid in open_map,
-                    start_time=open_map.get(aid),
+        def _build_duty_payload():
+            assistants = assistant_manager.get_all_assistants()
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                open_rows = c.execute(
+                    "SELECT assistant_id, start_time FROM assistant_sessions WHERE end_time IS NULL"
+                ).fetchall()
+            open_map = {aid: start for (aid, start) in open_rows}
+            result = []
+            for a in assistants:
+                aid = a[0]
+                result.append(
+                    dict(
+                        id=aid,
+                        name=a[1],
+                        role=a[2] if len(a) > 2 else "",
+                        email=a[3] if len(a) > 3 else "",
+                        phone=a[4] if len(a) > 4 else "",
+                        on_duty=aid in open_map,
+                        start_time=open_map.get(aid),
+                    )
                 )
-            )
-        return jsonify(result)
+            return result
+
+        payload = server_cache.get_or_set(
+            server_cache.ASSISTANTS_DUTY_LIST_CACHE_KEY,
+            _build_duty_payload,
+            policy="assistant_duty",
+        )
+        return jsonify(payload)
 
     @app.route("/api/assistants/select/<int:aid>", methods=["POST"])
     def api_assistants_select(aid):
@@ -304,6 +382,7 @@ def register_api_routes(app):
                 conn.commit()
                 # Keep legacy cache in sync (best-effort)
                 selected_assistants_cache[:] = [a for a in selected_assistants_cache if a.get("id") != aid]
+                server_cache.invalidate(server_cache.ASSISTANTS_DUTY_LIST_CACHE_KEY)
                 return jsonify({"success": True, "on_duty": False, "duration": duration})
             else:
                 # Start new open session
@@ -314,4 +393,5 @@ def register_api_routes(app):
                 conn.commit()
                 # Keep legacy cache in sync (best-effort)
                 selected_assistants_cache.append(dict(id=aid, name=assistant[1], role=assistant[2] if len(assistant) > 2 else "", start_time=now.isoformat()))
+                server_cache.invalidate(server_cache.ASSISTANTS_DUTY_LIST_CACHE_KEY)
                 return jsonify({"success": True, "on_duty": True})

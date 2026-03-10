@@ -21,12 +21,11 @@ def get_all_students():
     """Get all active students with their information."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        # Get only active student data including active book loan count
+        # Get only active student data
         c.execute("""
             SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.active, s.book_loaned, s.paper_ws,
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
-                   s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time,
-                   (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
+                   s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
             WHERE s.active = 1
             ORDER BY s.name
@@ -44,6 +43,35 @@ def get_student(student_id):
             FROM students WHERE id=?
         """, (student_id,)).fetchone()
         return row
+
+
+def get_student_static_profile(student_id):
+    """Get a single student by ID as a dictionary."""
+    row = get_student(student_id)
+    if not row:
+        return None
+    return {
+        'id': row[0],
+        'name': row[1],
+        'subject': row[2],
+        'email': row[3],
+        'phone': row[4],
+        'whatsapp': row[5],
+        'active': row[6],
+        'book_loaned': row[7],
+        'paper_ws': row[8],
+        'math_goal': row[9],
+        'math_ws_per_week': row[10],
+        'reading_goal': row[11],
+        'reading_ws_per_week': row[12],
+        'el': row[13],
+        'pi': row[14],
+        'v': row[15],
+        'day1': row[16],
+        'day2': row[17],
+        'day1_time': row[18],
+        'day2_time': row[19],
+    }
 
 
 def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time=""):
@@ -100,8 +128,7 @@ def get_deleted_students():
         c.execute("""
             SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.active, s.book_loaned, s.paper_ws,
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
-                   s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time,
-                   (SELECT COUNT(*) FROM books WHERE borrower_id = s.id AND available = 0) as has_active_loan
+                   s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
             WHERE s.active = 0
             ORDER BY s.name
@@ -187,8 +214,35 @@ def import_csv(file_path):
     return {"added": added, "updated": updated, "deleted": deleted}
 
 def export_csv(path):
+    """Export all active students to CSV with proper alignment of headers and data."""
     data=get_all_students()
-    headers=["ID","Name","Subject","Email","Phone","Active","BookLoaned","PaperWS","MathGoal","MathWSPerWeek","ReadingGoal","ReadingWSPerWeek"]
+    # Headers must match the order of columns returned by get_all_students()
+    # get_all_students returns: id, name, subject, level, email, phone, whatsapp, active, 
+    # book_loaned, paper_ws, math_goal, math_ws_per_week, reading_goal, reading_ws_per_week,
+    # el, pi, v, day1, day1_time, day2, day2_time
+    headers=[
+        "ID",
+        "Student Name",
+        "Subject",
+        "Level",
+        "Email",
+        "Phone",
+        "WhatsApp",
+        "Active",
+        "Book Loaned",
+        "Paper Worksheets",
+        "Math Goal",
+        "Math Worksheets/Week",
+        "Reading Goal",
+        "Reading Worksheets/Week",
+        "Early Learner",
+        "Primary Instruction",
+        "Virtual",
+        "Day 1",
+        "Day 1 Time",
+        "Day 2",
+        "Day 2 Time"
+    ]
     with open(path,"w",newline="",encoding="utf-8") as f:
         writer=csv.writer(f)
         writer.writerow(headers)

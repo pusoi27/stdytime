@@ -12,13 +12,36 @@ from modules.book_manager import (
     delete_book,
     loan_book,
     return_book,
+    clear_active_loan,
+    get_loaned_books_detailed,
     enforce_isbn_availability_rule,
+    sync_all_students_book_status,
 )
-from modules.student_manager import get_student
+from modules.student_manager import get_student, get_student_static_profile
+from modules import server_cache, db_backup_recovery
 import sqlite3
 from modules.database import DB_PATH
 import requests
 import re
+
+
+def _parse_non_negative_int(value, default=0):
+    """Parse numeric payload values as non-negative integers."""
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(parsed, 0)
+
+
+def _invalidate_books_cache(book_id=None):
+    """Invalidate books catalog lane and optionally one book detail lane."""
+    server_cache.invalidate(server_cache.BOOKS_CATALOG_CACHE_KEY)
+    if book_id is not None:
+        try:
+            server_cache.invalidate(server_cache.book_detail_cache_key(int(book_id)))
+        except (TypeError, ValueError):
+            pass
 
 
 def register_book_routes(app):
@@ -53,13 +76,14 @@ def register_book_routes(app):
                 borrower_id = book[9] if len(book) > 9 else None
                 borrower_name = None
                 if borrower_id:
-                    student = get_student(borrower_id)
+                    student = get_student_static_profile(borrower_id)
                     if student:
-                        borrower_name = student[1]
+                        borrower_name = student.get('name')
                 
                 # Book is available only if it has ISBN AND no borrower
                 has_isbn = (book[5] if len(book) > 5 else None) or (book[6] if len(book) > 6 else None)
-                is_available = 1 if (has_isbn and not borrower_id) else 0
+                copies = (book[8] if len(book) > 8 else 0) or 0
+                is_available = 1 if (copies > 0 and has_isbn and not borrower_id) else 0
                 
                 books_list.append({
                     'id': book[0],
@@ -84,6 +108,22 @@ def register_book_routes(app):
             flash(f"Error loading books: {str(e)}", "danger")
             return render_template("books_list.html", books=[], total_books=0)
     
+    @app.route("/api/books/catalog")
+    def api_books_catalog():
+        """Return full book catalog details with slower cache lane."""
+        def _build_catalog_payload():
+            enforce_isbn_availability_rule()
+            rows = get_books()
+            books_payload = [_book_row_to_dict(row) for row in rows]
+            return {'books': books_payload, 'count': len(books_payload)}
+
+        payload = server_cache.get_or_set(
+            server_cache.BOOKS_CATALOG_CACHE_KEY,
+            _build_catalog_payload,
+            policy="book_catalog",
+        )
+        return jsonify(payload)
+
     @app.route("/api/books/search")
     def api_books_search():
         """API endpoint to search/filter books."""
@@ -140,7 +180,44 @@ def register_book_routes(app):
 
     @app.route("/books/loan")
     def books_loan_page():
-        return render_template("book_loan.html")
+        from datetime import datetime
+        
+        loaned_books = get_loaned_books_detailed()
+        
+        # Group books by student for display
+        books_by_student = {}
+        for row in loaned_books:
+            student_name = row['student_name']
+            book_title = row['book_title']
+            checkout_date = row['checkout_date']
+            student_id = row['student_id']
+            book_id = row['book_id']
+            loan_id = row['loan_id']
+
+            if student_name not in books_by_student:
+                books_by_student[student_name] = []
+            
+            # Format the checkout date
+            try:
+                date_obj = datetime.fromisoformat(checkout_date.replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                formatted_date = checkout_date[:10] if len(checkout_date) >= 10 else checkout_date
+            
+            books_by_student[student_name].append({
+                'title': book_title,
+                'checkout_date': formatted_date,
+                'student_id': student_id,
+                'book_id': book_id,
+                'loan_id': loan_id,
+                'show_clear': bool(row.get('show_clear')),
+            })
+        
+        return render_template(
+            "book_loan.html",
+            books_by_student=books_by_student,
+            total_loans=len(loaned_books)
+        )
 
     @app.route("/api/students/suggest")
     def api_students_suggest():
@@ -242,7 +319,7 @@ def register_book_routes(app):
         isbn = _sanitize_isbn(payload.get('isbn')) if payload.get('isbn') else None
         isbn13 = _sanitize_isbn(payload.get('isbn13')) if payload.get('isbn13') else None
         level = (payload.get('reading_level') or '').strip()
-        copies = int(payload.get('copies') or 1)
+        copies = _parse_non_negative_int(payload.get('copies'), default=1)
         existing_id = payload.get('id')
 
         # If existing_id not provided, try to find by title to prevent duplicates
@@ -263,10 +340,11 @@ def register_book_routes(app):
                     isbn13=isbn13,
                     reading_level=level or None,
                     copies=copies,
-                    # Force availability to No if no ISBN present
-                    available=1 if (isbn or isbn13) else 0,
+                    # Availability is derived from ISBN + copies + borrower state.
+                    available=1 if (copies > 0 and (isbn or isbn13)) else 0,
                     borrower_id=payload.get('borrower_id') if payload.get('borrower_id') is not None else None,
                 )
+                _invalidate_books_cache(existing_id)
                 return jsonify({'status': 'updated', 'id': existing_id})
             except Exception as e:
                 return jsonify({'error': str(e)}), 500
@@ -284,11 +362,12 @@ def register_book_routes(app):
                 publisher=publisher,
                 isbn=isbn,
                 isbn13=isbn13,
-                # New books without ISBN should be marked unavailable
-                available=1 if (isbn or isbn13) else 0,
+                # New books must have copies + ISBN to be loanable.
+                available=1 if (copies > 0 and (isbn or isbn13)) else 0,
                 reading_level=level,
                 copies=copies,
             )
+            _invalidate_books_cache(new_id)
             return jsonify({'status': 'created', 'id': new_id})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -301,7 +380,7 @@ def register_book_routes(app):
         """Increase the number of copies for an existing book."""
         payload = request.get_json(silent=True) or {}
         book_id = payload.get('id')
-        additional_copies = int(payload.get('additional_copies') or 1)
+        additional_copies = _parse_non_negative_int(payload.get('additional_copies'), default=1)
 
         if not book_id:
             return jsonify({'error': 'Book ID is required.'}), 400
@@ -317,6 +396,7 @@ def register_book_routes(app):
 
             # Update copies count
             update_book(book_id, copies=new_copies)
+            _invalidate_books_cache(book_id)
             return jsonify({'status': 'updated', 'id': book_id, 'new_copies': new_copies})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -343,6 +423,8 @@ def register_book_routes(app):
             # Disallow loaning books without any ISBN
             if not (book[5] or book[6]):
                 return jsonify({'error': 'Book cannot be loaned without an ISBN.'}), 400
+            if (book[8] or 0) <= 0:
+                return jsonify({'error': 'Book has zero copies and cannot be loaned.'}), 400
             if not book[3]:
                 return jsonify({'error': 'Book is already loaned.'}), 400
 
@@ -367,6 +449,7 @@ def register_book_routes(app):
 
             student_id = student_row[0]
             checkout_date = loan_book(book_id, student_id)
+            _invalidate_books_cache(book_id)
             return jsonify({
                 'status': 'loaned',
                 'book_id': book_id,
@@ -374,6 +457,31 @@ def register_book_routes(app):
                 'student_name': student_row[1] if len(student_row) > 1 else None,
                 'checkout_date': checkout_date,
             })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route("/api/books/clear-loan", methods=["POST"])
+    def api_books_clear_loan():
+        """Clear an active loan directly from the loaned books table."""
+        payload = request.get_json(silent=True) or {}
+        book_id = payload.get('book_id')
+        student_id = payload.get('student_id')
+
+        if not book_id or not student_id:
+            return jsonify({'error': 'Book ID and Student ID are required.'}), 400
+
+        try:
+            book_id = int(book_id)
+            student_id = int(student_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid book or student ID.'}), 400
+
+        try:
+            cleared_at = clear_active_loan(book_id, student_id)
+            if not cleared_at:
+                return jsonify({'error': 'No active loan found for this student and book.'}), 404
+            _invalidate_books_cache(book_id)
+            return jsonify({'status': 'cleared', 'book_id': book_id, 'student_id': student_id, 'cleared_at': cleared_at})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -390,9 +498,46 @@ def register_book_routes(app):
             if book[3]:
                 return jsonify({'error': 'Book is already available.'}), 400
             return_date = return_book(book_id)
+            _invalidate_books_cache(book_id)
             return jsonify({'status': 'returned', 'book_id': book_id, 'return_date': return_date})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
+    # ----------------------------------------
+    # Sync all students' book_loaned status
+    # ----------------------------------------
+    @app.route("/api/books/sync-student-status", methods=["POST"])
+    def api_books_sync_student_status():
+        """Sync all students' book_loaned flag based on current book loans."""
+        backup_path = db_backup_recovery.create_backup("books_sync_student_status")
+        try:
+            count = sync_all_students_book_status()
+            # Sync touches both student records (book_loaned) and book records
+            # (borrower_id / available), so flush both cache lanes.
+            server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+            server_cache.invalidate(server_cache.BOOKS_CATALOG_CACHE_KEY)
+            server_cache.invalidate_prefix(server_cache.BOOK_DETAIL_CACHE_PREFIX)
+            return jsonify({'status': 'success', 'students_updated': count, 'backup': backup_path})
+        except Exception as e:
+            try:
+                db_backup_recovery.restore_backup(backup_path)
+                server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+                server_cache.invalidate(server_cache.BOOKS_CATALOG_CACHE_KEY)
+                server_cache.invalidate_prefix(server_cache.BOOK_DETAIL_CACHE_PREFIX)
+                return jsonify({
+                    'error': str(e),
+                    'status': 'rolled_back',
+                    'message': f'Operation failed. Database was restored from backup. Backup: {backup_path}. Error: {e}',
+                    'backup': backup_path,
+                }), 500
+            except Exception as restore_error:
+                return jsonify({
+                    'error': str(e),
+                    'status': 'restore_failed',
+                    'message': f'Operation failed and automatic restore also failed. Backup: {backup_path}. Error: {e}. Restore error: {restore_error}',
+                    'restore_error': str(restore_error),
+                    'backup': backup_path,
+                }), 500
 
     # ----------------------------------------
     # Get single book details (for editing)
@@ -400,15 +545,27 @@ def register_book_routes(app):
     @app.route("/api/books/<int:book_id>")
     def api_books_get(book_id: int):
         try:
-            book = get_book(book_id)
-            if not book:
+            cache_key = server_cache.book_detail_cache_key(book_id)
+
+            def _build_book_detail_payload():
+                book = get_book(book_id)
+                if not book:
+                    return None
+                data = _book_row_to_dict(book)
+                if data.get('borrower_id'):
+                    student = get_student(data['borrower_id'])
+                    if student:
+                        data['borrower_name'] = student[1]
+                return {'book': data}
+
+            payload = server_cache.get_or_set(
+                cache_key,
+                _build_book_detail_payload,
+                policy="book_catalog",
+            )
+            if payload is None:
                 return jsonify({'error': 'Book not found'}), 404
-            data = _book_row_to_dict(book)
-            if data.get('borrower_id'):
-                student = get_student(data['borrower_id'])
-                if student:
-                    data['borrower_name'] = student[1]
-            return jsonify({'book': data})
+            return jsonify(payload)
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
@@ -420,6 +577,7 @@ def register_book_routes(app):
         try:
             success = delete_book(book_id)
             if success:
+                _invalidate_books_cache(book_id)
                 flash("Book deleted", "success")
             else:
                 flash("Book not found", "warning")
@@ -512,13 +670,14 @@ def _book_row_to_dict(row):
     borrower_id = row[9]
     borrower_name = None
     if borrower_id:
-        student = get_student(borrower_id)
+        student = get_student_static_profile(borrower_id)
         if student:
-            borrower_name = student[1]
+            borrower_name = student.get('name')
     
     # Book is available only if it has ISBN AND no borrower
     has_isbn = row[5] or row[6]
-    is_available = 1 if (has_isbn and not borrower_id) else 0
+    copies = row[8] or 0
+    is_available = 1 if (copies > 0 and has_isbn and not borrower_id) else 0
     
     return {
         'id': row[0],

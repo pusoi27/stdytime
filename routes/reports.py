@@ -7,7 +7,7 @@ from flask import render_template, request, send_file, redirect, url_for
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
-from modules import reports, student_manager
+from modules import reports, student_manager, book_manager
 from modules.database import DB_PATH
 
 def register_reports_routes(app):
@@ -19,17 +19,126 @@ def register_reports_routes(app):
     
     @app.route('/reports/assistants')
     def reports_assistants():
-        """Display assistant hours summary report."""
-        days = int(request.args.get('days', 30))
-        data = reports.get_assistant_hours_summary(days=days)
-        return render_template('reports_assistants.html', data=data, days=days)
+        """Display assistant hours report page with date range selection."""
+        # Default date suggestions (last 30 days)
+        today = datetime.today().date()
+        default_start = (today - timedelta(days=30)).isoformat()
+        default_end = today.isoformat()
+        
+        # Get parameters from query string
+        start_param = request.args.get('start', '')
+        end_param = request.args.get('end', '')
+        
+        # Use provided params or defaults for display
+        display_start = start_param if start_param else default_start
+        display_end = end_param if end_param else default_end
+        
+        error = None
+        staff_hours = []
+        show_data = False
+        
+        # Only fetch data if both dates are provided
+        if start_param and end_param:
+            show_data = True
+            # Validate inputs
+            try:
+                start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+            except ValueError:
+                error = "Invalid date format; expected YYYY-MM-DD"
+                show_data = False
+                start_date = None
+                end_date = None
+            
+            if show_data and start_date and end_date:
+                if end_date < start_date:
+                    error = "End date must be on or after start date"
+                    show_data = False
+            
+            # Fetch data if no error
+            if show_data and not error and start_date and end_date:
+                summary = reports.get_assistant_hours_between(start_date.isoformat(), end_date.isoformat())
+                # Convert to HH:MM format
+                for name, sessions_count, total_sec in summary:
+                    hours = int(total_sec // 3600)
+                    minutes = int((total_sec % 3600) // 60)
+                    time_str = f"{hours:02d}:{minutes:02d}"
+                    staff_hours.append({
+                        'name': name,
+                        'sessions': sessions_count,
+                        'total_time': time_str,
+                        'total_seconds': total_sec
+                    })
+        
+        return render_template(
+            'reports_assistants.html',
+            start=display_start,
+            end=display_end,
+            error=error,
+            staff_hours=staff_hours,
+            show_data=show_data
+        )
 
     @app.route('/reports/assistants/pdf')
     def reports_assistants_pdf():
-        """Generate PDF of assistant hours report."""
-        days = int(request.args.get('days', 30))
-        path = reports.generate_assistant_hours_report(days=days)
-        return send_file(path, as_attachment=True)
+        """Generate PDF of assistant hours report with date range."""
+        start_param = request.args.get('start')
+        end_param = request.args.get('end')
+        
+        if not start_param or not end_param:
+            # Fallback to last 30 days
+            today = datetime.today().date()
+            start_param = (today - timedelta(days=30)).isoformat()
+            end_param = today.isoformat()
+        
+        try:
+            start_date = datetime.strptime(start_param, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_param, '%Y-%m-%d').date()
+        except ValueError:
+            return "Invalid date format; expected YYYY-MM-DD", 400
+        
+        if end_date < start_date:
+            return "End date must be on or after start date", 400
+        
+        summary = reports.get_assistant_hours_between(start_param, end_param)
+        
+        buffer = io.BytesIO()
+        canv = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        canv.setFont("Helvetica-Bold", 16)
+        canv.drawString(inch, height - inch, "Payroll Staff Hours Report")
+        canv.setFont("Helvetica", 12)
+        canv.drawString(inch, height - inch - 0.3*inch, f"Date Range: {start_date} to {end_date}")
+        
+        y = height - inch - 0.7*inch
+        canv.setFont("Helvetica-Bold", 11)
+        canv.drawString(inch, y, "Staff Name")
+        canv.drawString(inch + 3*inch, y, "Sessions")
+        canv.drawString(inch + 4.5*inch, y, "Total Hours")
+        
+        y -= 0.3*inch
+        canv.setFont("Helvetica", 10)
+        
+        for name, sessions_count, total_sec in summary:
+            hours = int(total_sec // 3600)
+            minutes = int((total_sec % 3600) // 60)
+            time_str = f"{hours:02d}:{minutes:02d}"
+            
+            canv.drawString(inch, y, str(name))
+            canv.drawString(inch + 3*inch, y, str(sessions_count))
+            canv.drawString(inch + 4.5*inch, y, time_str)
+            y -= 0.25*inch
+            
+            if y < inch:
+                canv.showPage()
+                canv.setFont("Helvetica", 10)
+                y = height - inch
+        
+        canv.save()
+        buffer.seek(0)
+        filename = f"payroll_staff_hours_{start_date}_to_{end_date}.pdf"
+        return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     @app.route('/reports/assistants/csv')
     def reports_assistants_csv():
@@ -42,32 +151,33 @@ def register_reports_routes(app):
         sessions = reports.get_assistant_sessions_between(start, end)
         summary = reports.get_assistant_hours_between(start, end)
         
-        def round_up_to_0_1(value):
-            import math
-            return math.ceil(value * 10) / 10.0
-        
         si = io.StringIO()
         writer = csv.writer(si)
         
-        writer.writerow(['ASSISTANT DUTY LOG', start, 'to', end])
+        writer.writerow(['PAYROLL STAFF HOURS - DETAILED BREAKDOWN', start, 'to', end])
         writer.writerow([])
-        writer.writerow(['Name', 'Date', 'Start Time', 'End Time', 'Duration (seconds)'])
+        writer.writerow(['Employee Name', 'Day Attended', 'Start Time', 'End Time', 'Hours Logged (HH:MM)'])
         for name, date_only, start_iso, end_iso, duration_sec in sessions:
             start_time = start_iso.split('T')[1][:5] if 'T' in start_iso else start_iso
             end_time = end_iso.split('T')[1][:5] if 'T' in end_iso else end_iso
-            writer.writerow([name, date_only, start_time, end_time, duration_sec])
+            # Convert duration to HH:MM format
+            hours = int(duration_sec // 3600)
+            minutes = int((duration_sec % 3600) // 60)
+            duration_hhmm = f"{hours:02d}:{minutes:02d}"
+            writer.writerow([name, date_only, start_time, end_time, duration_hhmm])
         
         writer.writerow([])
-        writer.writerow(['SUMMARY BY ASSISTANT'])
-        writer.writerow(['Name', 'Total Hours (rounded up)'])
+        writer.writerow(['SUMMARY BY EMPLOYEE'])
+        writer.writerow(['Employee Name', 'Total Sessions', 'Total Hours (HH:MM)'])
         for name, sessions_count, total_sec in summary:
-            hours = total_sec / 3600.0
-            hours_rounded = round_up_to_0_1(hours)
-            writer.writerow([name, f'{hours_rounded:.1f}'])
+            hours = int(total_sec // 3600)
+            minutes = int((total_sec % 3600) // 60)
+            total_hhmm = f"{hours:02d}:{minutes:02d}"
+            writer.writerow([name, sessions_count, total_hhmm])
         
         from flask import Response
         output = si.getvalue().encode('utf-8-sig')
-        filename = f"assistant_hours_{start}_to_{end}.csv"
+        filename = f"payroll_staff_hours_{start}_to_{end}.csv"
         headers = {
             'Content-Disposition': f'attachment; filename="{filename}"'
         }
@@ -287,7 +397,7 @@ def register_reports_routes(app):
                 if srow:
                     student_name = srow[0]
                     q = """
-                        SELECT DATE(start_time) as day, duration
+                        SELECT DATE(start_time) as day, TIME(start_time) as start_time, duration
                         FROM sessions
                         WHERE student_id = ?
                           AND DATE(start_time) >= ? AND DATE(start_time) <= ?
@@ -300,9 +410,10 @@ def register_reports_routes(app):
         sessions_list = [
             {
                 'date': day,
+                'start_time': (start_time[:5] if start_time else "--:--"),
                 'duration': f"{int(duration // 3600):02d}:{int((duration % 3600) // 60):02d}" if duration else "00:00"
             }
-            for day, duration in sessions
+            for day, start_time, duration in sessions
         ]
         
         return render_template(
@@ -347,7 +458,7 @@ def register_reports_routes(app):
             student_name = srow[0]
 
             q = """
-                SELECT DATE(start_time) as day, duration
+                SELECT DATE(start_time) as day, TIME(start_time) as start_time, duration
                 FROM sessions
                 WHERE student_id = ?
                   AND DATE(start_time) >= ? AND DATE(start_time) <= ?
@@ -369,7 +480,8 @@ def register_reports_routes(app):
         y = height - inch - 0.9*inch
         canv.setFont("Helvetica-Bold", 11)
         canv.drawString(inch, y, "Session Date")
-        canv.drawString(inch + 3.0*inch, y, "Session Active Time")
+        canv.drawString(inch + 2.3*inch, y, "Start Time")
+        canv.drawString(inch + 3.6*inch, y, "Session Active Time")
 
         y -= 0.3*inch
         canv.setFont("Helvetica", 10)
@@ -379,9 +491,10 @@ def register_reports_routes(app):
             m = (sec % 3600) // 60
             return f"{int(h):02d}:{int(m):02d}"
 
-        for day, duration in sessions:
+        for day, start_time, duration in sessions:
             canv.drawString(inch, y, str(day))
-            canv.drawString(inch + 3.0*inch, y, fmt(duration))
+            canv.drawString(inch + 2.3*inch, y, (start_time[:5] if start_time else "--:--"))
+            canv.drawString(inch + 3.6*inch, y, fmt(duration))
             y -= 0.25*inch
             if y < inch:
                 canv.showPage()
@@ -395,3 +508,36 @@ def register_reports_routes(app):
         buffer.seek(0)
         filename = f"student_{sid}_attendance_{start_date}_to_{end_date}.pdf"
         return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+    # ================================================================
+    # Loaned Books Report
+    # ================================================================
+    
+    @app.route('/reports/loaned-books')
+    def loaned_books_report():
+        """Display report of all currently loaned books."""
+        loaned_books = book_manager.get_loaned_books()
+        
+        # Group books by student for display
+        books_by_student = {}
+        for student_name, book_title, checkout_date, student_id in loaned_books:
+            if student_name not in books_by_student:
+                books_by_student[student_name] = []
+            
+            # Format the checkout date to be more readable
+            try:
+                date_obj = datetime.fromisoformat(checkout_date.replace('Z', '+00:00'))
+                formatted_date = date_obj.strftime('%Y-%m-%d')
+            except:
+                formatted_date = checkout_date[:10] if len(checkout_date) >= 10 else checkout_date
+            
+            books_by_student[student_name].append({
+                'title': book_title,
+                'checkout_date': formatted_date
+            })
+        
+        return render_template(
+            'reports_loaned_books.html',
+            books_by_student=books_by_student,
+            total_loans=len(loaned_books)
+        )

@@ -29,6 +29,9 @@ app.secret_key = "kumoclock_secret_key"
 # Initialize / verify sqlite DB
 init_db()
 
+# Cleanup old payroll data (18 month retention policy)
+assistant_manager.cleanup_old_payroll_data(months=18)
+
 # ================================================================
 #  Request Profiling - Track reads and writes
 # ================================================================

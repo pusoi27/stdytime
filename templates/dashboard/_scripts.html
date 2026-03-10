@@ -231,7 +231,7 @@ function buildAssistantsList(assistants){
       info.className = 'flex-fill';
       const badges = [];
       if (s.subject) badges.push(s.subject);
-      if (s.has_active_loan) badges.push('B');
+      if (s.book_loaned) badges.push('B');
       if (s.paper_ws) badges.push('P');
       const badgeDisplay = badges.length > 0 ? badges.join(', ') : '-';
       

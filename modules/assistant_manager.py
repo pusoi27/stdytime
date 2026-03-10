@@ -61,3 +61,30 @@ def delete_assistant(assistant_id):
         c = conn.cursor()
         c.execute("DELETE FROM staff WHERE id=?", (assistant_id,))
         conn.commit()
+
+
+def cleanup_old_payroll_data(months=18):
+    """
+    Delete assistant_sessions (payroll data) older than specified months.
+    Default: 18 months data retention policy.
+    Returns: Number of records deleted.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        # Count records to be deleted
+        c.execute("""
+            SELECT COUNT(*) FROM assistant_sessions 
+            WHERE start_time < DATE('now', '-' || ? || ' months')
+        """, (months,))
+        count = c.fetchone()[0]
+        
+        # Delete old records
+        if count > 0:
+            c.execute("""
+                DELETE FROM assistant_sessions 
+                WHERE start_time < DATE('now', '-' || ? || ' months')
+            """, (months,))
+            conn.commit()
+            print(f"[Payroll Cleanup] Deleted {count} assistant_sessions records older than {months} months")
+        
+        return count

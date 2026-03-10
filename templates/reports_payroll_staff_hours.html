@@ -2,16 +2,15 @@
 {% block content %}
 <div class="container py-3">
   <h4>Payroll Staff Hours Report</h4>
-  
-  <form method="get" action="{{ url_for('reports_assistants') }}" class="mb-3" id="reportForm">
+  <form method="get" action="{{ url_for('reports_assistants') }}" class="mb-3">
     <div class="row g-3 align-items-end">
       <div class="col-md-3">
         <label for="start" class="form-label">Start Date</label>
-        <input type="date" id="start" name="start" class="form-control" value="{{ start }}">
+        <input type="date" id="start" name="start" class="form-control" value="{{ start }}" required>
       </div>
       <div class="col-md-3">
         <label for="end" class="form-label">End Date</label>
-        <input type="date" id="end" name="end" class="form-control" value="{{ end }}">
+        <input type="date" id="end" name="end" class="form-control" value="{{ end }}" required>
       </div>
       <div class="col-md-auto">
         <button type="submit" class="btn btn-primary">Update Report</button>
@@ -81,20 +80,6 @@
 </div>
 
 <script>
-// Form validation before submission
-document.getElementById('reportForm').addEventListener('submit', function(e) {
-  const start = document.getElementById('start').value;
-  const end = document.getElementById('end').value;
-  
-  if (!start || !end) {
-    e.preventDefault();
-    alert('Please select both start and end dates.');
-    return false;
-  }
-  
-  return true;
-});
-
 function exportCSV() {
   const start = document.getElementById('start').value;
   const end = document.getElementById('end').value;

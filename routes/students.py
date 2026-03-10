@@ -1,7 +1,7 @@
 # routes/students.py
 from flask import render_template, request, redirect, url_for, flash
 from werkzeug.utils import secure_filename
-from modules import student_manager, instructor_profile_manager
+from modules import student_manager, instructor_profile_manager, server_cache, db_backup_recovery
 import sqlite3
 from modules.database import DB_PATH
 import os
@@ -54,7 +54,7 @@ def register_student_routes(app, upload_folder):
             if subject not in {"S1", "S2"}:
                 flash("Please select a valid Subject (S1 or S2).", "danger")
                 return redirect(url_for("students_add"))
-            student_manager.add_student(
+            student_id = student_manager.add_student(
                 request.form["name"],
                 subject,
                 request.form.get("email", ""),
@@ -74,6 +74,9 @@ def register_student_routes(app, upload_folder):
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
             )
+            # Invalidate list lane and ensure any pre-existing key for this id is refreshed.
+            server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+            server_cache.invalidate(server_cache.student_goal_cache_key(student_id))
             flash("Student added successfully.", "success")
             return redirect(url_for("students_list"))
         
@@ -112,6 +115,10 @@ def register_student_routes(app, upload_folder):
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
             )
+            # Invalidate static profile/goals lane for this student only.
+            server_cache.invalidate(server_cache.student_goal_cache_key(sid))
+            # Also refresh students list lane because static fields shown there may have changed.
+            server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
             flash("Student updated.", "info")
             # Check if came from calendar
             from_calendar = request.args.get('from_calendar')
@@ -127,18 +134,24 @@ def register_student_routes(app, upload_folder):
     @app.route("/students/delete/<int:sid>")
     def students_delete(sid):
         student_manager.delete_student(sid)
+        server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+        server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student deleted.", "warning")
         return redirect(url_for("students_list"))
 
     @app.route("/students/reactivate/<int:sid>")
     def students_reactivate(sid):
         student_manager.reactivate_student(sid)
+        server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+        server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student reactivated.", "success")
         return redirect(url_for("students_list"))
 
     @app.route("/students/permanent-delete/<int:sid>")
     def students_permanent_delete(sid):
         student_manager.permanent_delete_student(sid)
+        server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+        server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student permanently deleted.", "danger")
         return redirect(url_for("students_list"))
 
@@ -150,9 +163,26 @@ def register_student_routes(app, upload_folder):
             return redirect(url_for("students_list"))
         path = os.path.join(upload_folder, secure_filename(file.filename))
         file.save(path)
-        result = student_manager.import_csv(path)
-        if isinstance(result, dict) and result.get("error"):
-            flash(result.get("error"), "danger")
+        backup_path = db_backup_recovery.create_backup("students_import")
+        try:
+            result = student_manager.import_csv(path)
+            if isinstance(result, dict) and result.get("error"):
+                db_backup_recovery.restore_backup(backup_path)
+                server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+                server_cache.invalidate_prefix(server_cache.STUDENT_GOAL_CACHE_PREFIX)
+                flash(
+                    f"Operation failed. Database was restored from backup. Backup: {backup_path}. Error: {result.get('error')}",
+                    "danger",
+                )
+                return redirect(url_for("students_list"))
+        except Exception as e:
+            db_backup_recovery.restore_backup(backup_path)
+            server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+            server_cache.invalidate_prefix(server_cache.STUDENT_GOAL_CACHE_PREFIX)
+            flash(
+                f"Operation failed. Database was restored from backup. Backup: {backup_path}. Error: {e}",
+                "danger",
+            )
             return redirect(url_for("students_list"))
         added = result.get("added", 0) if isinstance(result, dict) else result
         updated = result.get("updated", 0) if isinstance(result, dict) else 0
@@ -164,6 +194,8 @@ def register_student_routes(app, upload_folder):
         if deleted > 0:
             message += f", Deleted {deleted} student(s)"
         message += "."
+        server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
+        server_cache.invalidate_prefix(server_cache.STUDENT_GOAL_CACHE_PREFIX)
         flash(message, "success")
         return redirect(url_for("students_list"))
 

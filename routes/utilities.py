@@ -142,6 +142,23 @@ def register_utilities_routes(app):
         """Main utilities page"""
         return render_template('utilities/index.html')
     
+    @app.route('/api/utilities/cleanup-payroll', methods=['POST'])
+    def api_cleanup_payroll():
+        """Manually trigger payroll data cleanup (18 month retention)"""
+        try:
+            from modules import assistant_manager
+            deleted_count = assistant_manager.cleanup_old_payroll_data(months=18)
+            return jsonify({
+                'success': True,
+                'deleted_count': deleted_count,
+                'message': f'Deleted {deleted_count} payroll records older than 18 months'
+            })
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+    
     # ==================== Student Report Card ====================
     @app.route('/utilities/report-card')
     def report_card_page():

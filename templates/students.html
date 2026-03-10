@@ -184,7 +184,7 @@
         <td>{{ s[13] or 0 }}</td>
         <td class="col-actions">
           <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
-          <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete student?');">Del</a>
+          <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick='return confirm("Delete student " + {{ s[1]|tojson }} + "?");'>Del</a>
         </td>
       </tr>
       {% endfor %}

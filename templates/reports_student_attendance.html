@@ -43,7 +43,8 @@
         <table class="table table-sm align-middle">
           <thead>
             <tr>
-              <th style="width: 20rem;">Session Date</th>
+              <th style="width: 16rem;">Session Date</th>
+              <th style="width: 12rem;">Start Time</th>
               <th style="width: 15rem;">Session Active Time</th>
             </tr>
           </thead>
@@ -52,11 +53,12 @@
               {% for row in sessions %}
               <tr>
                 <td>{{ row.date }}</td>
+                <td>{{ row.start_time }}</td>
                 <td>{{ row.duration }}</td>
               </tr>
               {% endfor %}
             {% else %}
-              <tr><td colspan="2" class="text-muted">No sessions found for selected range.</td></tr>
+              <tr><td colspan="3" class="text-muted">No sessions found for selected range.</td></tr>
             {% endif %}
           </tbody>
         </table>

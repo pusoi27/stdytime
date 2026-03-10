@@ -1,12 +1,32 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KumoClock</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
+<style>
+  html, body {
+    width: 100%;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    overflow-x: hidden;
+  }
+</style>
+</head>
+<body>
 <!-- templates/navbar.html -->
 <nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#0d6efd; font-weight:600;">
   <div class="container-fluid">
 
     <!-- Brand -->
-    <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
+    <a class="navbar-brand fw-bold" style="color:white;" href="/">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
-    <span class="text-white-50 small">Version {{ app_version }}</span>
+    <span class="text-white-50 small">Version 06.09.17</span>
 
     <!-- Toggler -->
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
@@ -24,8 +44,8 @@
           <a class="nav-link dropdown-toggle text-white" href="#" id="studentsMenu"
              role="button" data-bs-toggle="dropdown"><i class="bi bi-people"></i> Students</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="{{ url_for('students_add') }}">Add Student</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('students_list') }}">View / Edit / Delete</a></li>
+            <li><a class="dropdown-item" href="/students/add">Add Student</a></li>
+            <li><a class="dropdown-item" href="/students">View / Edit / Delete</a></li>
           </ul>
         </li>
 
@@ -33,9 +53,9 @@
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="booksMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-journal-bookmark"></i> Library Books</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="{{ url_for('books_add') }}">Add Book</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('books_list') }}">View / Edit / Delete</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('books_loan_page') }}">Book Loan</a></li>
+            <li><a class="dropdown-item" href="/books/add">Add Book</a></li>
+            <li><a class="dropdown-item" href="/books">View / Edit / Delete</a></li>
+            <li><a class="dropdown-item" href="/books/loan">Book Loan</a></li>
           </ul>
         </li>
 
@@ -51,11 +71,11 @@
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="utilMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-wrench-adjustable"></i> Utilities</a>
           <ul class="dropdown-menu" aria-labelledby="utilMenu">
-            <li><a class="dropdown-item" href="{{ url_for('report_card_page') }}">Student Report Card</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('evaluation_page') }}">Student Evaluation</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('award_ceremony_page') }}">Award Ceremony</a></li>
+            <li><a class="dropdown-item" href="/utilities/report-card">Student Report Card</a></li>
+            <li><a class="dropdown-item" href="/utilities/evaluation">Student Evaluation</a></li>
+            <li><a class="dropdown-item" href="/utilities/award-ceremony">Award Ceremony</a></li>
             <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('diploma_generator_page') }}"><i class="bi bi-award"></i> Diploma Generator</a></li>
+            <li><a class="dropdown-item" href="/utilities/diploma-generator"><i class="bi bi-award"></i> Diploma Generator</a></li>
           </ul>
         </li>
 
@@ -63,26 +83,27 @@
 <li class="nav-item dropdown">
   <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-workspace"></i> Instructor</a>
   <ul class="dropdown-menu" aria-labelledby="instMenu">
-    <li><a class="dropdown-item" href="{{ url_for('instructor_profile') }}">Profile</a></li>
-    <li><a class="dropdown-item" href="{{ url_for('center_calendar') }}"><i class="bi bi-calendar-week"></i> Center Calendar</a></li>
+    <li><a class="dropdown-item" href="/instructor/profile">Profile</a></li>
+    <li><a class="dropdown-item" href="/instructor/calendar"><i class="bi bi-calendar-week"></i> Center Calendar</a></li>
     <li><hr class="dropdown-divider"></li>
     <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Reports</a>
       <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="{{ url_for('reports_assistants') }}">Payroll Staff Hours</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('class_attendance_page') }}">Class Attendance</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('student_attendance_page') }}">Student Attendance</a></li>
+        <li><a class="dropdown-item" href="/reports/assistants">Payroll Staff Hours</a></li>
+        <li><a class="dropdown-item" href="/reports/class-attendance">Class Attendance</a></li>
+        <li><a class="dropdown-item" href="/reports/student-attendance">Student Attendance</a></li>
+        <li><a class="dropdown-item" href="#">Loaned Books</a></li>
       </ul>
     </li>
-    <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Assistants</a></li>
+    <li><a class="dropdown-item" href="/assistants">Manage Assistants</a></li>
     <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Settings</a>
       <ul class="dropdown-menu">
         <li class="dropdown-submenu">
           <a class="dropdown-item" href="#" role="button">QR Code</a>
           <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="{{ url_for('qr_print_page') }}" onclick="event.stopPropagation();">Print</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('qr_scanner') }}" onclick="event.stopPropagation();">Scanner</a></li>
+            <li><a class="dropdown-item" href="/qr/print_page" onclick="event.stopPropagation();">Print</a></li>
+            <li><a class="dropdown-item" href="/qr/scanner" onclick="event.stopPropagation();">Scanner</a></li>
           </ul>
         </li>
         
@@ -95,9 +116,9 @@
 
       <!-- Exit + Date/Time -->
       <div class="d-flex align-items-center text-white small">
-        <span class="me-3"><i class="bi bi-calendar3"></i> {{ date_str }}</span>
-        <span class="me-3"><i class="bi bi-clock"></i> {{ time_str }}</span>
-        <a href="{{ url_for('exit_app') }}" class="text-danger fw-bold text-decoration-none" onclick="return confirm('Are you sure you want to exit the application?')"><i class="bi bi-box-arrow-left"></i> Exit</a>
+        <span class="me-3"><i class="bi bi-calendar3"></i> Saturday, March 07, 2026</span>
+        <span class="me-3"><i class="bi bi-clock"></i> 05:37:48 PM</span>
+        <a href="/exit" class="text-danger fw-bold text-decoration-none" onclick="return confirm('Are you sure you want to exit the application?')"><i class="bi bi-box-arrow-left"></i> Exit</a>
       </div>
     </div>
   </div>
@@ -362,3 +383,111 @@ function downloadAssistantCSV(){
   }
 }
 </style>
+
+  
+
+
+<div class="container py-3">
+  <h4>Payroll Staff Hours Report</h4>
+  
+  <!-- Debug info: Show what values template received -->
+  <div class="alert alert-warning">
+    <strong>DEBUG:</strong> start="", end="", show_data=
+  </div>
+  
+  <!-- Debug info (remove after testing) -->
+  <script>
+    console.log('Template values - start: "", end: ""');
+    console.log('Show data: ');
+  </script>
+  
+  <form method="get" action="/reports/assistants" class="mb-3" id="reportForm">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label for="start" class="form-label">Start Date</label>
+        <input type="date" id="start" name="start" class="form-control" value="">
+      </div>
+      <div class="col-md-3">
+        <label for="end" class="form-label">End Date</label>
+        <input type="date" id="end" name="end" class="form-control" value="">
+      </div>
+      <div class="col-md-auto">
+        <button type="submit" class="btn btn-primary">Update Report</button>
+      </div>
+      <div class="col-md-auto ms-auto">
+        <button type="button" class="btn btn-success" onclick="exportCSV()" disabled>
+          <i class="bi bi-file-earmark-spreadsheet"></i> Export to CSV
+        </button>
+        <button type="button" class="btn btn-outline-secondary" onclick="printPDF()" disabled>
+          <i class="bi bi-printer"></i> Print to PDF
+        </button>
+      </div>
+    </div>
+  </form>
+
+  
+
+  
+  <div class="alert alert-info mt-3">
+    <i class="bi bi-info-circle"></i> Please select a start date and end date, then click <strong>Update Report</strong> to view payroll staff hours.
+  </div>
+  
+</div>
+
+<script>
+// Debug: Check values after page loads
+document.addEventListener('DOMContentLoaded', function() {
+  const startInput = document.getElementById('start');
+  const endInput = document.getElementById('end');
+  console.log('After page load - start input value:', startInput.value);
+  console.log('After page load - end input value:', endInput.value);
+  console.log('After page load - start input HTML:', startInput.outerHTML.substring(0, 200));
+});
+
+// Form validation before submission
+document.getElementById('reportForm').addEventListener('submit', function(e) {
+  const start = document.getElementById('start').value;
+  const end = document.getElementById('end').value;
+  
+  console.log('Form submitting - start:', start, ', end:', end);
+  
+  if (!start || !end) {
+    e.preventDefault();
+    alert('Please select both start and end dates.');
+    return false;
+  }
+  
+  console.log('Form submitting with:', {start: start, end: end});
+  return true;
+});
+
+function exportCSV() {
+  const start = document.getElementById('start').value;
+  const end = document.getElementById('end').value;
+  if (!start || !end) {
+    alert('Please select both start and end dates.');
+    return;
+  }
+  window.location.href = `/reports/assistants/csv?start=${start}&end=${end}`;
+}
+
+function printPDF() {
+  const start = document.getElementById('start').value;
+  const end = document.getElementById('end').value;
+  if (!start || !end) {
+    alert('Please select both start and end dates.');
+    return;
+  }
+  window.open(`/reports/assistants/pdf?start=${start}&end=${end}`, '_blank');
+}
+</script>
+
+<style>
+.table tbody tr:last-child {
+  border-top: 2px solid #333;
+}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
