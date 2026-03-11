@@ -5,9 +5,9 @@ KumoClock: Student class management system with dashboard, QR codes, and PDF lab
 Features: Student management, session tracking, QR generation, Avery 8160 PDF output, assistant duty tracking.
 """
 
-from flask import Flask, render_template, request, send_from_directory, jsonify
+from flask import Flask, render_template, request, send_from_directory, jsonify, session, g
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 import os
 import shutil
@@ -17,14 +17,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from modules.database import init_db, DB_PATH
-from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports
+from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager
 from modules.utils import format_hhmm
 
 # ================================================================
 #  Flask setup
 # ================================================================
 app = Flask(__name__)
-app.secret_key = "kumoclock_secret_key"
+app.secret_key = os.getenv('SECRET_KEY', "kumoclock_secret_key")
+
+# Session configuration
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Initialize / verify sqlite DB
 init_db()
@@ -102,9 +109,19 @@ class RequestProfiler:
 profiler = RequestProfiler()
 
 @app.before_request
+def before_request_auth():
+    """Load current user from session into g object before each request."""
+    g.current_user = None
+    if 'user_id' in session:
+        g.current_user = auth_manager.get_user_by_id(session['user_id'])
+        if not g.current_user or not g.current_user.is_active:
+            # User was deactivated or deleted
+            session.clear()
+            g.current_user = None
+
+@app.before_request
 def before_request_profiler():
     """Capture request start time."""
-    from flask import g
     g.start_time = datetime.now()
 
 @app.after_request
@@ -148,6 +165,15 @@ def inject_dynamic_lists():
     """Make the in-memory active and checked lists available to templates."""
     from routes.api import active_students_cache, checked_out_cache
     return dict(active_list=active_students_cache, checked_list=checked_out_cache)
+
+
+@app.context_processor
+def inject_current_user():
+    """Inject current user and session data into all templates."""
+    return dict(
+        current_user=g.get('current_user'),
+        user_session=session
+    )
 
 
 @app.context_processor
@@ -253,6 +279,7 @@ def _ensure_version_up_to_date():
 # ================================================================
 #  Register all route modules
 # ================================================================
+from routes.auth import register_auth_routes
 from routes.dashboard import register_dashboard_routes
 from routes.students import register_student_routes
 from routes.assistants import register_assistant_routes
@@ -271,6 +298,9 @@ def qr_scanner():
     Name:Kennedy D.
     page for hardware barcode scanner."""
     return render_template('qr_scanner.html')
+
+# Register auth routes FIRST (needed for login)
+register_auth_routes(app)
 
 register_dashboard_routes(app)
 register_student_routes(app, UPLOAD_FOLDER)

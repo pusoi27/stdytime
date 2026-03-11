@@ -1,7 +1,8 @@
 # routes/students.py
 from flask import render_template, request, redirect, url_for, flash
 from werkzeug.utils import secure_filename
-from modules import student_manager, instructor_profile_manager, server_cache, db_backup_recovery
+from modules import student_manager, instructor_profile_manager, server_cache, db_backup_recovery, auth_manager
+from routes.auth import require_login
 import sqlite3
 from modules.database import DB_PATH
 import os
@@ -10,20 +11,25 @@ def register_student_routes(app, upload_folder):
     """Register student CRUD and CSV routes."""
     
     @app.route("/students")
+        @require_login
     def students_list():
+            # Get current user ID for tenant scoping
+            owner_user_id = auth_manager.get_current_user_id()
+        
         # Get duplicate information to display alerts
         duplicate_summary = student_manager.get_duplicate_summary()
         has_duplicates = student_manager.has_duplicate_names()
         
         return render_template(
             "students.html",
-            students=student_manager.get_all_students(),
-            deleted_students=student_manager.get_deleted_students(),
+                students=student_manager.get_all_students(owner_user_id),
+                deleted_students=student_manager.get_deleted_students(owner_user_id),
             has_duplicates=has_duplicates,
             duplicate_summary=duplicate_summary,
         )
 
     @app.route("/students/duplicates")
+        @require_login
     def students_duplicates():
         """Display all duplicate student names with their details."""
         duplicate_summary = student_manager.get_duplicate_summary()
@@ -34,6 +40,7 @@ def register_student_routes(app, upload_folder):
         )
 
     @app.route("/api/students/duplicates")
+        @require_login
     def api_get_duplicates():
         """API endpoint to get duplicate student names (JSON response)."""
         from flask import jsonify
@@ -48,8 +55,10 @@ def register_student_routes(app, upload_folder):
         })
 
     @app.route("/students/add", methods=["GET", "POST"])
+        @require_login
     def students_add():
         if request.method == "POST":
+            owner_user_id = auth_manager.get_current_user_id()
             subject = (request.form.get("subject", "").strip() or "")
             if subject not in {"S1", "S2"}:
                 flash("Please select a valid Subject (S1 or S2).", "danger")
@@ -73,6 +82,7 @@ def register_student_routes(app, upload_folder):
                 day2=request.form.get("day2", ""),
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
+                owner_user_id=owner_user_id,
             )
             # Invalidate list lane and ensure any pre-existing key for this id is refreshed.
             server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
@@ -85,8 +95,10 @@ def register_student_routes(app, upload_folder):
         return render_template("student_form.html", action="Add", student=None, profile=profile)
 
     @app.route("/students/edit/<int:sid>", methods=["GET", "POST"])
+    @require_login
     def students_edit(sid):
-        stu = student_manager.get_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        stu = student_manager.get_student(sid, owner_user_id)
         if not stu:
             return "Student not found", 404
         if request.method == "POST":
@@ -114,6 +126,7 @@ def register_student_routes(app, upload_folder):
                 day2=request.form.get("day2", ""),
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
+                owner_user_id=owner_user_id,
             )
             # Invalidate static profile/goals lane for this student only.
             server_cache.invalidate(server_cache.student_goal_cache_key(sid))
@@ -132,31 +145,39 @@ def register_student_routes(app, upload_folder):
         return render_template("student_form.html", action="Edit", student=stu, profile=profile, from_calendar=from_calendar)
 
     @app.route("/students/delete/<int:sid>")
+    @require_login
     def students_delete(sid):
-        student_manager.delete_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        student_manager.delete_student(sid, owner_user_id)
         server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
         server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student deleted.", "warning")
         return redirect(url_for("students_list"))
 
     @app.route("/students/reactivate/<int:sid>")
+    @require_login
     def students_reactivate(sid):
-        student_manager.reactivate_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        student_manager.reactivate_student(sid, owner_user_id)
         server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
         server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student reactivated.", "success")
         return redirect(url_for("students_list"))
 
     @app.route("/students/permanent-delete/<int:sid>")
+    @require_login
     def students_permanent_delete(sid):
-        student_manager.permanent_delete_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        student_manager.permanent_delete_student(sid, owner_user_id)
         server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
         server_cache.invalidate(server_cache.student_goal_cache_key(sid))
         flash("Student permanently deleted.", "danger")
         return redirect(url_for("students_list"))
 
     @app.route("/students/import", methods=["POST"])
+    @require_login
     def students_import():
+        owner_user_id = auth_manager.get_current_user_id()
         file = request.files.get("csvfile")
         if not file or file.filename == "":
             flash("No file selected.", "danger")
@@ -165,7 +186,7 @@ def register_student_routes(app, upload_folder):
         file.save(path)
         backup_path = db_backup_recovery.create_backup("students_import")
         try:
-            result = student_manager.import_csv(path)
+            result = student_manager.import_csv(path, owner_user_id)
             if isinstance(result, dict) and result.get("error"):
                 db_backup_recovery.restore_backup(backup_path)
                 server_cache.invalidate(server_cache.STUDENTS_LIST_CACHE_KEY)
@@ -200,9 +221,12 @@ def register_student_routes(app, upload_folder):
         return redirect(url_for("students_list"))
 
     @app.route("/students/export")
+    @require_login
     def students_export():
         from flask import send_file
         export_folder = "exports"
         export_path = os.path.join(export_folder, "students_export.csv")
-        student_manager.export_csv(export_path)
+        owner_user_id = auth_manager.get_current_user_id()
+        # Export only this user's students
+        student_manager.export_csv(export_path, owner_user_id)
         return send_file(export_path, as_attachment=True)

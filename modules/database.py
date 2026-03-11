@@ -3,6 +3,7 @@
 #*****************************
 
 import sqlite3, os
+from datetime import datetime
 
 DB_PATH = os.path.join("data", "kumoclock.db")
 
@@ -86,6 +87,19 @@ def init_db():
         )
     """)
 
+    # Users (Identity & Authentication)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT DEFAULT 'instructor',
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     conn.commit()
 
     # Sample data
@@ -106,7 +120,16 @@ def init_db():
         c.execute("INSERT INTO books (title,author,isbn,available,reading_level)"
                   " VALUES (?,?,?,?,?)",
                   ("Mathematics Basics","KumoPress","111222333",1,"5A"))
-
+    # Create default admin user (email: admin@kumoclock.local, password: KumoClock@2025)
+    # NOTE: Users should change this password on first login
+    if not c.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
+        from werkzeug.security import generate_password_hash
+        default_admin_hash = generate_password_hash("KumoClock@2025", method='pbkdf2:sha256')
+        now = datetime.now().isoformat()
+        c.execute("""
+            INSERT INTO users (email, password_hash, role, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, ("admin@kumoclock.local", default_admin_hash, "admin", 1, now, now))
     conn.commit(); conn.close()
 
     # Ensure additional columns exist on students table (migration for additional fields)

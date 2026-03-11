@@ -17,31 +17,40 @@ def safe_int(value, default=0):
         return default
 
 
-def get_all_students():
-    """Get all active students with their information."""
+def get_all_students(owner_user_id=1):
+    """Get all active students with their information for a specific user.
+    
+    Args:
+        owner_user_id: User ID to filter students (default: 1 for backward compatibility)
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        # Get only active student data
+        # Get only active student data for this owner
         c.execute("""
             SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.active, s.book_loaned, s.paper_ws,
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
                    s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
-            WHERE s.active = 1
+            WHERE s.active = 1 AND s.owner_user_id = ?
             ORDER BY s.name
-        """)
+        """, (owner_user_id,))
         return c.fetchall()
 
 
-def get_student(student_id):
-    """Get a single student by ID."""
+def get_student(student_id, owner_user_id=1):
+    """Get a single student by ID, with ownership check.
+    
+    Args:
+        student_id: Student ID to retrieve
+        owner_user_id: User ID to verify ownership (default: 1 for backward compatibility)
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         row = c.execute("""
             SELECT id,name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,
                    reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time 
-            FROM students WHERE id=?
-        """, (student_id,)).fetchone()
+            FROM students WHERE id=? AND owner_user_id=?
+        """, (student_id, owner_user_id)).fetchone()
         return row
 
 
@@ -74,14 +83,18 @@ def get_student_static_profile(student_id):
     }
 
 
-def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time=""):
-    """Add a new student to the database and automatically generate QR code."""
+def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
+    """Add a new student to the database and automatically generate QR code.
+    
+    Args:
+        owner_user_id: User ID to assign as owner (default: 1 for backward compatibility)
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO students
-            (name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time)
-            VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (name, subject, email, phone, whatsapp, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week), int(bool(el)), int(bool(pi)), int(bool(v)), day1, day2, day1_time, day2_time))
+            (name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time,owner_user_id)
+            VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (name, subject, email, phone, whatsapp, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week), int(bool(el)), int(bool(pi)), int(bool(v)), day1, day2, day1_time, day2_time, owner_user_id))
         student_id = c.lastrowid
         conn.commit()
     
@@ -96,33 +109,37 @@ def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_w
     return student_id
 
 
-def update_student(sid, name, email, phone, whatsapp="", subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time=""):
-    """Update an existing student's information."""
+def update_student(sid, name, email, phone, whatsapp="", subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
+    """Update an existing student's information with ownership check.
+    
+    Args:
+        owner_user_id: User ID to verify ownership (default: 1 for backward compatibility)
+    """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,whatsapp=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=?""",
-                  (name,subject,email,phone,whatsapp,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid))
+        c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,whatsapp=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=? AND owner_user_id=?""",
+                  (name,subject,email,phone,whatsapp,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid,owner_user_id))
         conn.commit()
 
 
-def delete_student(sid):
-    """Soft delete: mark student as inactive instead of hard delete."""
+def delete_student(sid, owner_user_id=1):
+    """Soft delete: mark student as inactive instead of hard delete with ownership check."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("UPDATE students SET active=0 WHERE id=?", (sid,))
+        c.execute("UPDATE students SET active=0 WHERE id=? AND owner_user_id=?", (sid, owner_user_id))
         conn.commit()
 
 
-def permanent_delete_student(sid):
-    """Permanently delete student from database (hard delete)."""
+def permanent_delete_student(sid, owner_user_id=1):
+    """Permanently delete student from database (hard delete) with ownership check."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("DELETE FROM students WHERE id=?", (sid,))
+        c.execute("DELETE FROM students WHERE id=? AND owner_user_id=?", (sid, owner_user_id))
         conn.commit()
 
 
-def get_deleted_students():
-    """Get all deleted/inactive students."""
+def get_deleted_students(owner_user_id=1):
+    """Get all deleted/inactive students for a specific user."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""
@@ -130,21 +147,27 @@ def get_deleted_students():
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
                    s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
-            WHERE s.active = 0
+            WHERE s.active = 0 AND s.owner_user_id = ?
             ORDER BY s.name
-        """)
+        """, (owner_user_id,))
         return c.fetchall()
 
 
-def reactivate_student(sid):
-    """Reactivate a deleted/inactive student."""
+def reactivate_student(sid, owner_user_id=1):
+    """Reactivate a deleted/inactive student with ownership check."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("UPDATE students SET active=1 WHERE id=?", (sid,))
+        c.execute("UPDATE students SET active=1 WHERE id=? AND owner_user_id=?", (sid, owner_user_id))
         conn.commit()
 
 
-def import_csv(file_path):
+def import_csv(file_path, owner_user_id=1):
+    """Import students from CSV with ownership assignment.
+    
+    Args:
+        file_path: Path to CSV file
+        owner_user_id: User ID to assign as owner of imported students (default: 1)
+    """
     if not os.path.exists(file_path):
         return {"added": 0, "updated": 0, "deleted": 0}
     added=0
@@ -181,32 +204,32 @@ def import_csv(file_path):
             if subject.strip() not in {"S1", "S2"}:
                 return {"error": "CSV import failed: subject must be S1 or S2 for every student."}
             
-            # Check if student exists
-            student_record=conn.execute("SELECT id FROM students WHERE LOWER(TRIM(name))=LOWER(?)",(name.strip(),)).fetchone()
+            # Check if student exists (owned by this user)
+            student_record=conn.execute("SELECT id FROM students WHERE LOWER(TRIM(name))=LOWER(?) AND owner_user_id=?",(name.strip(), owner_user_id)).fetchone()
             
             if student_record:
                 # UPDATE existing student - set all fields from CSV
                 student_id = student_record[0]
                 print(f"UPDATING student ID {student_id}: {name}")
-                conn.execute("""UPDATE students SET name=?, subject=?, email=?, phone=?, whatsapp=?, math_goal=?, math_ws_per_week=?, reading_goal=?, reading_ws_per_week=?, active=1 WHERE id=?"""
-                             ,(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws,student_id))
+                conn.execute("""UPDATE students SET name=?, subject=?, email=?, phone=?, whatsapp=?, math_goal=?, math_ws_per_week=?, reading_goal=?, reading_ws_per_week=?, active=1 WHERE id=? AND owner_user_id=?"""
+                             ,(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws,student_id,owner_user_id))
                 updated+=1
             else:
-                # INSERT new student
+                # INSERT new student with owner_user_id
                 print(f"INSERTING new student: {name}")
-                conn.execute("""INSERT INTO students(name,subject,email,phone,whatsapp,active,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week)
-                                VALUES(?,?,?,?,?,1,?,?,?,?)""",(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws))
+                conn.execute("""INSERT INTO students(name,subject,email,phone,whatsapp,active,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,owner_user_id)
+                                VALUES(?,?,?,?,?,1,?,?,?,?,?)""",(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws,owner_user_id))
                 added+=1
         
-        # PERMANENTLY delete students not in CSV
+        # PERMANENTLY delete students not in CSV (owned by this user only)
         cursor=conn.cursor()
-        cursor.execute("SELECT id, name FROM students")
+        cursor.execute("SELECT id, name FROM students WHERE owner_user_id=?", (owner_user_id,))
         db_students=cursor.fetchall()
         print(f"CSV names: {csv_names}")
         for student_id, student_name in db_students:
             student_name_lower = student_name.lower().strip()
             if student_name_lower not in csv_names:
-                conn.execute("DELETE FROM students WHERE id=?", (student_id,))
+                conn.execute("DELETE FROM students WHERE id=? AND owner_user_id=?", (student_id, owner_user_id))
                 deleted+=1
                 print(f"Permanently deleting: {student_name}")
         
