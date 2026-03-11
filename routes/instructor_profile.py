@@ -1,22 +1,27 @@
 # routes/instructor_profile.py
 from flask import render_template, request, redirect, url_for, flash, jsonify
-from modules import instructor_profile_manager, student_manager
+from modules import instructor_profile_manager, student_manager, auth_manager
 from datetime import datetime
+from routes.auth import require_login
 
 
 def register_instructor_profile_routes(app):
     """Register instructor profile CRUD routes."""
     
     @app.route("/instructor/profile")
+    @require_login
     def instructor_profile():
         """Display the instructor profile page"""
-        profile = instructor_profile_manager.get_instructor_profile()
+        owner_user_id = auth_manager.get_current_user_id()
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
         return render_template("instructor_profile.html", profile=profile)
 
     @app.route("/instructor/profile/edit", methods=["GET", "POST"])
+    @require_login
     def instructor_profile_edit():
         """Edit or create instructor profile"""
-        profile = instructor_profile_manager.get_instructor_profile()
+        owner_user_id = auth_manager.get_current_user_id()
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
         
         if request.method == "POST":
             name = request.form.get("name", "").strip()
@@ -60,7 +65,8 @@ def register_instructor_profile_routes(app):
                     center_location,
                     center_address,
                     center_hours,
-                    weekly_hours
+                    weekly_hours,
+                    owner_user_id=owner_user_id,
                 )
                 flash("Instructor profile updated successfully.", "success")
             else:
@@ -72,7 +78,8 @@ def register_instructor_profile_routes(app):
                     center_location,
                     center_address,
                     center_hours,
-                    weekly_hours
+                    weekly_hours,
+                    owner_user_id=owner_user_id,
                 )
                 flash("Instructor profile created successfully.", "success")
             
@@ -82,13 +89,15 @@ def register_instructor_profile_routes(app):
         return render_template("instructor_profile_form.html", profile=profile, action=action)
 
     @app.route("/api/instructor/profile", methods=["GET"])
+    @require_login
     def api_get_instructor_profile():
         """API endpoint to get instructor profile (for AJAX requests)
 
         Always returns HTTP 200 with a `success` flag so frontend fetch won't
         throw on non-200 responses.
         """
-        profile = instructor_profile_manager.get_instructor_profile()
+        owner_user_id = auth_manager.get_current_user_id()
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
         if profile:
             return jsonify({
                 'success': True,
@@ -101,10 +110,12 @@ def register_instructor_profile_routes(app):
         })
 
     @app.route("/instructor/calendar")
+    @require_login
     def center_calendar():
         """Display the center calendar with student schedules"""
-        profile = instructor_profile_manager.get_instructor_profile()
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         
         # Determine which days have class hours
         active_days = []

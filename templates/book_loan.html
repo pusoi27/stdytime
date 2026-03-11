@@ -109,7 +109,7 @@
                 <td>{{ book.title }}</td>
                 <td><small class="text-muted">{{ book.checkout_date }}</small></td>
                 <td class="text-center">
-                  {% if book.show_clear %}
+                  {% if book.show_clear and current_user and current_user.is_admin() %}
                   <button
                     type="button"
                     class="btn btn-outline-danger btn-sm"

@@ -54,6 +54,7 @@
                                         {% if user.id != session.get('user_id') %}
                                             <form method="POST" action="{{ url_for('auth.deactivate_user', user_id=user.id) }}" style="display:inline;">
                                                 {% if user.is_active %}
+                                                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Deactivate this user?')">Deactivate</button>
                                                 {% else %}
                                                     <button type="submit" class="btn btn-sm btn-success" disabled title="Reactivation not yet implemented">Inactive</button>

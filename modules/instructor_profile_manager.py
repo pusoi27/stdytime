@@ -7,8 +7,24 @@ from datetime import datetime
 from modules.database import DB_PATH
 
 
-def get_instructor_profile():
-    """Get the instructor profile (assumes single profile)"""
+def _ensure_owner_column():
+    """Ensure instructor_profile supports multi-tenant ownership."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("PRAGMA table_info(instructor_profile)")
+        cols = [r[1] for r in c.fetchall()]
+        if "owner_user_id" not in cols:
+            c.execute("ALTER TABLE instructor_profile ADD COLUMN owner_user_id INTEGER DEFAULT 1")
+            c.execute("UPDATE instructor_profile SET owner_user_id = 1 WHERE owner_user_id IS NULL")
+            c.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_instructor_profile_owner ON instructor_profile(owner_user_id)"
+            )
+            conn.commit()
+
+
+def get_instructor_profile(owner_user_id=1):
+    """Get the instructor profile for a specific user."""
+    _ensure_owner_column()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""
@@ -18,8 +34,9 @@ def get_instructor_profile():
                    friday_start, friday_end, saturday_start, saturday_end,
                    sunday_start, sunday_end, created_at, updated_at
             FROM instructor_profile
+            WHERE owner_user_id = ?
             LIMIT 1
-        """)
+        """, (owner_user_id,))
         row = c.fetchone()
         if row:
             return {
@@ -50,20 +67,21 @@ def get_instructor_profile():
     return None
 
 
-def create_instructor_profile(name, email, phone, center_location, center_address, center_hours, weekly_hours):
-    """Create a new instructor profile"""
+def create_instructor_profile(name, email, phone, center_location, center_address, center_hours, weekly_hours, owner_user_id=1):
+    """Create a new instructor profile for the given user."""
+    _ensure_owner_column()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         now = datetime.now().isoformat()
         days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         
-        values = [name, email, phone, center_location, center_address, center_hours, now, now]
+        values = [name, email, phone, center_location, center_address, center_hours, now, now, owner_user_id]
         for day in days:
             values.append(weekly_hours.get(f'{day}_start', ''))
             values.append(weekly_hours.get(f'{day}_end', ''))
         
         placeholders = ','.join(['?' for _ in range(len(values))])
-        columns = 'name, email, phone, center_location, center_address, center_hours, created_at, updated_at'
+        columns = 'name, email, phone, center_location, center_address, center_hours, created_at, updated_at, owner_user_id'
         for day in days:
             columns += f', {day}_start, {day}_end'
         
@@ -75,8 +93,9 @@ def create_instructor_profile(name, email, phone, center_location, center_addres
         return c.lastrowid
 
 
-def update_instructor_profile(profile_id, name, email, phone, center_location, center_address, center_hours, weekly_hours):
-    """Update an existing instructor profile"""
+def update_instructor_profile(profile_id, name, email, phone, center_location, center_address, center_hours, weekly_hours, owner_user_id=1):
+    """Update an existing instructor profile owned by the current user."""
+    _ensure_owner_column()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         now = datetime.now().isoformat()
@@ -91,18 +110,20 @@ def update_instructor_profile(profile_id, name, email, phone, center_location, c
             values.append(weekly_hours.get(f'{day}_end', ''))
         
         values.append(profile_id)
+        values.append(owner_user_id)
         
         c.execute(f"""
             UPDATE instructor_profile
             SET {set_clause}
-            WHERE id = ?
+            WHERE id = ? AND owner_user_id = ?
         """, values)
         conn.commit()
 
 
-def delete_instructor_profile(profile_id):
-    """Delete an instructor profile"""
+def delete_instructor_profile(profile_id, owner_user_id=1):
+    """Delete an instructor profile owned by the current user."""
+    _ensure_owner_column()
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("DELETE FROM instructor_profile WHERE id = ?", (profile_id,))
+        c.execute("DELETE FROM instructor_profile WHERE id = ? AND owner_user_id = ?", (profile_id, owner_user_id))
         conn.commit()

@@ -35,7 +35,12 @@
             <button type="submit" class="btn btn-outline-primary btn-sm">Generate QR</button>
           </form>
           <a href="{{ url_for('assistants_edit', aid=a[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
-          <a href="{{ url_for('assistants_delete', aid=a[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete assistant?');">Del</a>
+          {% if current_user and current_user.is_admin() %}
+          <form method="POST" action="{{ url_for('assistants_delete', aid=a[0]) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete assistant?');">Del</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

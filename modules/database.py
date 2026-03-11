@@ -19,11 +19,24 @@ def init_db():
             name TEXT,
             subject TEXT,
             level TEXT,
-            book_loaned INTEGER,
-            paper_ws INTEGER,
+            book_loaned INTEGER DEFAULT 0,
+            paper_ws INTEGER DEFAULT 0,
             email TEXT,
             phone TEXT,
-            active INTEGER DEFAULT 1
+            whatsapp TEXT DEFAULT '',
+            active INTEGER DEFAULT 1,
+            math_goal TEXT DEFAULT '',
+            math_ws_per_week INTEGER DEFAULT 0,
+            reading_goal TEXT DEFAULT '',
+            reading_ws_per_week INTEGER DEFAULT 0,
+            el INTEGER DEFAULT 0,
+            pi INTEGER DEFAULT 0,
+            v INTEGER DEFAULT 0,
+            day1 TEXT DEFAULT '',
+            day1_time TEXT DEFAULT '',
+            day2 TEXT DEFAULT '',
+            day2_time TEXT DEFAULT '',
+            owner_user_id INTEGER NOT NULL DEFAULT 1
         )
     """)
 
@@ -34,7 +47,9 @@ def init_db():
             name TEXT,
             role TEXT,
             email TEXT,
-            phone TEXT
+            phone TEXT,
+            whatsapp TEXT DEFAULT '',
+            owner_user_id INTEGER NOT NULL DEFAULT 1
         )
     """)
 
@@ -45,8 +60,13 @@ def init_db():
             title TEXT,
             author TEXT,
             isbn TEXT,
-            available INTEGER,
-            reading_level TEXT
+            isbn13 TEXT,
+            publisher TEXT,
+            available INTEGER DEFAULT 1,
+            reading_level TEXT,
+            copies INTEGER DEFAULT 1,
+            borrower_id INTEGER,
+            owner_user_id INTEGER NOT NULL DEFAULT 1
         )
     """)
 
@@ -58,6 +78,7 @@ def init_db():
             start_time TEXT,
             end_time TEXT,
             duration INTEGER,
+            owner_user_id INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY(student_id) REFERENCES students(id)
         )
     """)
@@ -70,6 +91,7 @@ def init_db():
             start_time TEXT,
             end_time TEXT,
             duration INTEGER,
+            owner_user_id INTEGER NOT NULL DEFAULT 1,
             FOREIGN KEY(assistant_id) REFERENCES staff(id)
         )
     """)
@@ -82,8 +104,18 @@ def init_db():
             email TEXT,
             phone TEXT,
             center_location TEXT,
+            center_address TEXT,
+            center_hours TEXT,
+            monday_start TEXT, monday_end TEXT,
+            tuesday_start TEXT, tuesday_end TEXT,
+            wednesday_start TEXT, wednesday_end TEXT,
+            thursday_start TEXT, thursday_end TEXT,
+            friday_start TEXT, friday_end TEXT,
+            saturday_start TEXT, saturday_end TEXT,
+            sunday_start TEXT, sunday_end TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            owner_user_id INTEGER DEFAULT 1
         )
     """)
 
@@ -95,6 +127,7 @@ def init_db():
             password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'instructor',
             is_active INTEGER DEFAULT 1,
+            must_change_password INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
@@ -166,6 +199,8 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN day1_time TEXT")
         if "day2_time" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN day2_time TEXT")
+        if "owner_user_id" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     # Ensure `whatsapp` column exists on staff table (migration for WhatsApp contact)
@@ -175,6 +210,8 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "whatsapp" not in cols:
             cur.execute("ALTER TABLE staff ADD COLUMN whatsapp TEXT")
+        if "owner_user_id" not in cols:
+            cur.execute("ALTER TABLE staff ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     # Ensure new book columns exist (migration for book inventory management)
@@ -191,7 +228,31 @@ def init_db():
             cur.execute("ALTER TABLE books ADD COLUMN publisher TEXT")
         if "borrower_id" not in cols:
             cur.execute("ALTER TABLE books ADD COLUMN borrower_id INTEGER REFERENCES students(id)")
+        if "owner_user_id" not in cols:
+            cur.execute("ALTER TABLE books ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         
+        conn.commit()
+
+    # Ensure must_change_password column exists on users table
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(users)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "must_change_password" not in cols:
+            cur.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+        conn.commit()
+
+    # Ensure owner_user_id exists on sessions and assistant_sessions
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(sessions)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "owner_user_id" not in cols:
+            cur.execute("ALTER TABLE sessions ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
+        cur.execute("PRAGMA table_info(assistant_sessions)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "owner_user_id" not in cols:
+            cur.execute("ALTER TABLE assistant_sessions ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     # Ensure instructor_profile has center_hours column (migration for center operating hours)

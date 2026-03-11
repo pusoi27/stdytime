@@ -8,7 +8,8 @@ from flask import Blueprint, render_template, request, jsonify
 import sqlite3
 from modules.database import DB_PATH
 from modules.whatsapp_manager import WhatsAppManager
-from modules import student_manager
+from modules import student_manager, auth_manager
+from routes.auth import require_login
 
 
 def register_whatsapp_routes(app):
@@ -18,27 +19,36 @@ def register_whatsapp_routes(app):
     wa_manager = WhatsAppManager()
     
     @app.route('/whatsapp')
+    @require_login
     def whatsapp_dashboard():
         """WhatsApp messaging dashboard"""
         return render_template('whatsapp/dashboard.html', 
                              is_configured=wa_manager.is_configured())
     
     @app.route('/whatsapp/students')
+    @require_login
     def whatsapp_students():
         """Send WhatsApp to students page"""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         return render_template('whatsapp/students.html', students=students)
     
     @app.route('/whatsapp/staff')
+    @require_login
     def whatsapp_staff():
         """Send WhatsApp to staff page"""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id, name, role, whatsapp FROM staff ORDER BY name")
+            cursor.execute(
+                "SELECT id, name, role, whatsapp FROM staff WHERE owner_user_id = ? ORDER BY name",
+                (owner_user_id,),
+            )
             staff = cursor.fetchall()
         return render_template('whatsapp/staff.html', staff=staff)
     
     @app.route('/whatsapp/broadcast')
+    @require_login
     def whatsapp_broadcast():
         """Broadcast WhatsApp to multiple recipients"""
         return render_template('whatsapp/broadcast.html')
@@ -48,6 +58,7 @@ def register_whatsapp_routes(app):
     # ================================================================
     
     @app.route('/api/whatsapp/status', methods=['GET'])
+    @require_login
     def api_whatsapp_status():
         """Check WhatsApp configuration status"""
         return jsonify({
@@ -57,8 +68,10 @@ def register_whatsapp_routes(app):
         })
     
     @app.route('/api/whatsapp/send-to-student', methods=['POST'])
+    @require_login
     def api_send_to_student():
         """Send WhatsApp message to a student"""
+        owner_user_id = auth_manager.get_current_user_id()
         if not wa_manager.is_configured():
             return jsonify({'success': False, 'error': 'WhatsApp not configured'}), 400
         
@@ -70,7 +83,7 @@ def register_whatsapp_routes(app):
             return jsonify({'success': False, 'error': 'Missing student_id or message'}), 400
         
         # Get student details
-        student = student_manager.get_student(student_id)
+        student = student_manager.get_student(student_id, owner_user_id=owner_user_id)
         if not student:
             return jsonify({'success': False, 'error': 'Student not found'}), 404
         
@@ -84,7 +97,10 @@ def register_whatsapp_routes(app):
             cursor.execute("PRAGMA table_info(students)")
             cols = {r[1]: r[0] for r in cursor.fetchall()}
             if 'whatsapp' in cols:
-                cursor.execute("SELECT whatsapp FROM students WHERE id=?", (student_id,))
+                cursor.execute(
+                    "SELECT whatsapp FROM students WHERE id=? AND owner_user_id = ?",
+                    (student_id, owner_user_id),
+                )
                 row = cursor.fetchone()
                 if row:
                     student_whatsapp = row[0]
@@ -93,8 +109,10 @@ def register_whatsapp_routes(app):
         return jsonify(result), 200 if result['success'] else 400
     
     @app.route('/api/whatsapp/send-to-staff', methods=['POST'])
+    @require_login
     def api_send_to_staff():
         """Send WhatsApp message to a staff member"""
+        owner_user_id = auth_manager.get_current_user_id()
         if not wa_manager.is_configured():
             return jsonify({'success': False, 'error': 'WhatsApp not configured'}), 400
         
@@ -108,7 +126,10 @@ def register_whatsapp_routes(app):
         # Get staff details
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT name, whatsapp FROM staff WHERE id=?", (staff_id,))
+            cursor.execute(
+                "SELECT name, whatsapp FROM staff WHERE id=? AND owner_user_id = ?",
+                (staff_id, owner_user_id),
+            )
             staff = cursor.fetchone()
         
         if not staff:
@@ -119,8 +140,10 @@ def register_whatsapp_routes(app):
         return jsonify(result), 200 if result['success'] else 400
     
     @app.route('/api/whatsapp/broadcast-students', methods=['POST'])
+    @require_login
     def api_broadcast_to_students():
         """Broadcast WhatsApp to multiple students"""
+        owner_user_id = auth_manager.get_current_user_id()
         if not wa_manager.is_configured():
             return jsonify({'success': False, 'error': 'WhatsApp not configured'}), 400
         
@@ -134,13 +157,16 @@ def register_whatsapp_routes(app):
         # Get student details
         recipients = []
         for sid in student_ids:
-            student = student_manager.get_student(sid)
+            student = student_manager.get_student(sid, owner_user_id=owner_user_id)
             if student:
                 student_name = student[1]
                 # Get WhatsApp from database
                 with sqlite3.connect(DB_PATH) as conn:
                     cursor = conn.cursor()
-                    cursor.execute("SELECT whatsapp FROM students WHERE id=?", (sid,))
+                    cursor.execute(
+                        "SELECT whatsapp FROM students WHERE id=? AND owner_user_id = ?",
+                        (sid, owner_user_id),
+                    )
                     row = cursor.fetchone()
                     student_whatsapp = row[0] if row and row[0] else student[5]  # fallback to phone
                 
@@ -156,8 +182,10 @@ def register_whatsapp_routes(app):
         return jsonify(result), 200 if result['success'] else 400
     
     @app.route('/api/whatsapp/broadcast-staff', methods=['POST'])
+    @require_login
     def api_broadcast_to_staff():
         """Broadcast WhatsApp to multiple staff members"""
+        owner_user_id = auth_manager.get_current_user_id()
         if not wa_manager.is_configured():
             return jsonify({'success': False, 'error': 'WhatsApp not configured'}), 400
         
@@ -173,7 +201,10 @@ def register_whatsapp_routes(app):
         for sid in staff_ids:
             with sqlite3.connect(DB_PATH) as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT name, whatsapp FROM staff WHERE id=?", (sid,))
+                cursor.execute(
+                    "SELECT name, whatsapp FROM staff WHERE id=? AND owner_user_id = ?",
+                    (sid, owner_user_id),
+                )
                 staff = cursor.fetchone()
                 if staff:
                     recipients.append({
@@ -188,8 +219,10 @@ def register_whatsapp_routes(app):
         return jsonify(result), 200 if result['success'] else 400
     
     @app.route('/api/whatsapp/update-student-whatsapp', methods=['POST'])
+    @require_login
     def api_update_student_whatsapp():
         """Update student WhatsApp number"""
+        owner_user_id = auth_manager.get_current_user_id()
         data = request.get_json(silent=True) or {}
         student_id = data.get('student_id')
         whatsapp = data.get('whatsapp', '').strip()
@@ -204,7 +237,10 @@ def register_whatsapp_routes(app):
         try:
             with sqlite3.connect(DB_PATH) as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE students SET whatsapp=? WHERE id=?", (whatsapp, student_id))
+                cursor.execute(
+                    "UPDATE students SET whatsapp=? WHERE id=? AND owner_user_id = ?",
+                    (whatsapp, student_id, owner_user_id),
+                )
                 conn.commit()
             
             return jsonify({'success': True, 'message': 'WhatsApp number updated successfully'})
@@ -212,8 +248,10 @@ def register_whatsapp_routes(app):
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/whatsapp/update-staff-whatsapp', methods=['POST'])
+    @require_login
     def api_update_staff_whatsapp():
         """Update staff WhatsApp number"""
+        owner_user_id = auth_manager.get_current_user_id()
         data = request.get_json(silent=True) or {}
         staff_id = data.get('staff_id')
         whatsapp = data.get('whatsapp', '').strip()
@@ -228,7 +266,10 @@ def register_whatsapp_routes(app):
         try:
             with sqlite3.connect(DB_PATH) as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE staff SET whatsapp=? WHERE id=?", (whatsapp, staff_id))
+                cursor.execute(
+                    "UPDATE staff SET whatsapp=? WHERE id=? AND owner_user_id = ?",
+                    (whatsapp, staff_id, owner_user_id),
+                )
                 conn.commit()
             
             return jsonify({'success': True, 'message': 'WhatsApp number updated successfully'})

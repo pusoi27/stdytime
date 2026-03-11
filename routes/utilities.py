@@ -25,8 +25,9 @@ sys.path.insert(0, str(PARENT_DIR / 'modules'))
 from modules.database import get_db_connection
 from modules.utils import format_hhmm
 from modules.email_manager import get_email_manager
-from modules import instructor_profile_manager
+from modules import instructor_profile_manager, auth_manager
 from modules.award_rules_engine import get_worksheets_per_day, normalize_level
+from routes.auth import require_login
 
 # Temporary storage directory for report-card file data to avoid bloating session cookies
 TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
@@ -138,11 +139,13 @@ def register_utilities_routes(app):
         }
     
     @app.route('/utilities')
+    @require_login
     def utilities_index():
         """Main utilities page"""
         return render_template('utilities/index.html')
     
     @app.route('/api/utilities/cleanup-payroll', methods=['POST'])
+    @require_login
     def api_cleanup_payroll():
         """Manually trigger payroll data cleanup (18 month retention)"""
         try:
@@ -161,21 +164,25 @@ def register_utilities_routes(app):
     
     # ==================== Student Report Card ====================
     @app.route('/utilities/report-card')
+    @require_login
     def report_card_page():
         """Student Report Card page"""
+        owner_user_id = auth_manager.get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get all students for the dropdown
-        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        cursor.execute('SELECT id, name FROM students WHERE owner_user_id = ? ORDER BY name', (owner_user_id,))
         students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
         conn.close()
         
         return render_template('utilities/report_card.html', students=students)
     
     @app.route('/api/utilities/get-student-email-by-name', methods=['POST'])
+    @require_login
     def api_get_student_email_by_name():
         """Get student email by matching first name from full name"""
+        owner_user_id = auth_manager.get_current_user_id()
         try:
             data = request.get_json()
             full_name = data.get('full_name', '').strip()
@@ -196,8 +203,9 @@ def register_utilities_routes(app):
                 SELECT id, name, email, math_ws_per_week, reading_ws_per_week
                 FROM students 
                 WHERE LOWER(SUBSTR(name, 1, INSTR(name || ' ', ' ') - 1)) = ?
+                AND owner_user_id = ?
                 ORDER BY name
-            """, (first_name,))
+            """, (first_name, owner_user_id))
             
             matches = cursor.fetchall()
             conn.close()
@@ -225,14 +233,16 @@ def register_utilities_routes(app):
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route('/api/utilities/report-card/<int:student_id>', methods=['GET'])
+    @require_login
     def api_get_report_card(student_id):
         """Get student report card data"""
+        owner_user_id = auth_manager.get_current_user_id()
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get student info including active status and subject
-            cursor.execute('SELECT id, name, email, phone, active, subject FROM students WHERE id = ?', (student_id,))
+            cursor.execute('SELECT id, name, email, phone, active, subject FROM students WHERE id = ? AND owner_user_id = ?', (student_id, owner_user_id))
             student = cursor.fetchone()
             
             if not student:
@@ -244,11 +254,11 @@ def register_utilities_routes(app):
                 SELECT DATE(start_time) as date, COUNT(*) as sessions, 
                        SUM(CASE WHEN end_time IS NOT NULL THEN 1 ELSE 0 END) as attended
                 FROM sessions 
-                WHERE student_id = ? 
+                WHERE student_id = ? AND owner_user_id = ?
                 GROUP BY DATE(start_time)
                 ORDER BY date DESC
                 LIMIT 30
-            ''', (student_id,))
+            ''', (student_id, owner_user_id))
             
             attendance = []
             for row in cursor.fetchall():
@@ -368,6 +378,7 @@ def register_utilities_routes(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/report-card/export/<int:student_id>', methods=['GET'])
+    @require_login
     def api_export_report_card(student_id):
         """Export report card as PDF/CSV"""
         try:
@@ -378,6 +389,7 @@ def register_utilities_routes(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/report-card/generate-report', methods=['GET'])
+    @require_login
     def api_generate_unified_report():
         """Return structured rows for Math/Reading with inactive filtered out"""
         try:
@@ -442,6 +454,7 @@ def register_utilities_routes(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/report-card/load-file', methods=['POST'])
+    @require_login
     def api_load_subject_file():
         """Load Math or Reading file and parse data - subject extracted from filename"""
         try:
@@ -568,6 +581,7 @@ def register_utilities_routes(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/report-card/send-email', methods=['POST'])
+    @require_login
     def api_send_report_email():
         """Send student report card via email"""
         try:
@@ -622,7 +636,7 @@ def register_utilities_routes(app):
             if student_id:
                 try:
                     from modules.student_manager import get_student
-                    student = get_student(student_id)
+                    student = get_student(student_id, owner_user_id=auth_manager.get_current_user_id())
                     if student:
                         # Index 10 is math_ws_per_week, index 12 is reading_ws_per_week (from get_student)
                         student_math_ws_per_week = _as_positive_number(student[10] if len(student) > 10 else None)
@@ -938,27 +952,31 @@ This is an automated message. Please do not reply.
     
     # ==================== Student Evaluation ====================
     @app.route('/utilities/evaluation')
+    @require_login
     def evaluation_page():
         """Student Evaluation page"""
+        owner_user_id = auth_manager.get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get all students for the dropdown
-        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        cursor.execute('SELECT id, name FROM students WHERE owner_user_id = ? ORDER BY name', (owner_user_id,))
         students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
         conn.close()
         
         return render_template('utilities/evaluation.html', students=students)
     
     @app.route('/api/utilities/evaluation/<int:student_id>', methods=['GET'])
+    @require_login
     def api_get_evaluation(student_id):
         """Get student evaluation data"""
+        owner_user_id = auth_manager.get_current_user_id()
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
             
             # Get student info
-            cursor.execute('SELECT id, name FROM students WHERE id = ?', (student_id,))
+            cursor.execute('SELECT id, name FROM students WHERE id = ? AND owner_user_id = ?', (student_id, owner_user_id))
             student = cursor.fetchone()
             
             if not student:
@@ -1002,13 +1020,15 @@ This is an automated message. Please do not reply.
     
     # ==================== Award Ceremony ====================
     @app.route('/utilities/award-ceremony')
+    @require_login
     def award_ceremony_page():
         """Award Ceremony page"""
+        owner_user_id = auth_manager.get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get all students
-        cursor.execute('SELECT id, name FROM students ORDER BY name')
+        cursor.execute('SELECT id, name FROM students WHERE owner_user_id = ? ORDER BY name', (owner_user_id,))
         students = [{'id': row[0], 'name': row[1]} for row in cursor.fetchall()]
         
         conn.close()
@@ -1016,6 +1036,7 @@ This is an automated message. Please do not reply.
         return render_template('utilities/award_ceremony.html', students=students)
     
     @app.route('/api/utilities/award-ceremony/analyze', methods=['POST'])
+    @require_login
     def api_analyze_awards():
         """Analyze and determine awards for students"""
         try:
@@ -1086,6 +1107,7 @@ This is an automated message. Please do not reply.
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/award-ceremony/export', methods=['POST'])
+    @require_login
     def api_export_awards():
         """Export award ceremony results"""
         try:
@@ -1109,13 +1131,15 @@ This is an automated message. Please do not reply.
             return jsonify({'error': str(e)}), 500    
     # ==================== Diploma Generation ====================
     @app.route('/utilities/diploma-generator')
+    @require_login
     def diploma_generator_page():
         """Diploma/Certificate generation page"""
+        owner_user_id = auth_manager.get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Get all students for the dropdown
-        cursor.execute('SELECT id, name, subject, level FROM students ORDER BY name')
+        cursor.execute('SELECT id, name, subject, level FROM students WHERE owner_user_id = ? ORDER BY name', (owner_user_id,))
         students = [
             {
                 'id': row[0],
@@ -1130,6 +1154,7 @@ This is an automated message. Please do not reply.
         return render_template('utilities/diploma_generator.html', students=students)
     
     @app.route('/api/utilities/diploma-generator/generate', methods=['POST'])
+    @require_login
     def api_generate_diplomas():
         """Generate diplomas for selected students"""
         try:
@@ -1159,10 +1184,11 @@ This is an automated message. Please do not reply.
             conn = get_db_connection()
             cursor = conn.cursor()
             
+            owner_user_id = auth_manager.get_current_user_id()
             for name in student_names:
                 cursor.execute(
-                    'SELECT name, subject, level FROM students WHERE name = ?',
-                    (name,)
+                    'SELECT name, subject, level FROM students WHERE name = ? AND owner_user_id = ?',
+                    (name, owner_user_id)
                 )
                 row = cursor.fetchone()
                 if row:
@@ -1207,6 +1233,7 @@ This is an automated message. Please do not reply.
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/diploma-generator/templates', methods=['GET'])
+    @require_login
     def api_get_diploma_templates():
         """Get available diploma templates"""
         try:

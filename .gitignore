@@ -24,3 +24,7 @@ dist/
 
 # Local database files
 data/*.db
+data/backups/
+
+# Local logs
+*.log

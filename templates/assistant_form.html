@@ -4,6 +4,7 @@
   <h4>{{ action }} Assistant</h4>
   <form method="post">
     <div class="mb-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="form-label">Name</label>
       <input name="name" class="form-control" value="{{ assistant[1] if assistant else '' }}" required>
     </div>

@@ -25,11 +25,12 @@ def get_current_user_id():
 class User:
     """User model representing an authenticated user."""
     
-    def __init__(self, user_id, email, role, is_active=True):
+    def __init__(self, user_id, email, role, is_active=True, must_change_password=False):
         self.id = user_id
         self.email = email
         self.role = role
         self.is_active = is_active
+        self.must_change_password = bool(must_change_password)
     
     def __repr__(self):
         return f"<User {self.email} ({self.role})>"
@@ -84,14 +85,17 @@ def authenticate_user(email, password):
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("SELECT id, email, role, is_active, password_hash FROM users WHERE email = ?", (email,))
+        c.execute(
+            "SELECT id, email, role, is_active, password_hash, must_change_password FROM users WHERE email = ?",
+            (email,)
+        )
         row = c.fetchone()
         conn.close()
         
         if not row:
             return None
         
-        user_id, user_email, role, is_active, password_hash = row
+        user_id, user_email, role, is_active, password_hash, must_change_password = row
         
         # Check if user is active
         if not is_active:
@@ -101,7 +105,7 @@ def authenticate_user(email, password):
         if not check_password_hash(password_hash, password):
             return None
         
-        return User(user_id, user_email, role, is_active)
+        return User(user_id, user_email, role, is_active, must_change_password)
     
     except Exception as e:
         print(f"[auth] Error authenticating user: {e}")
@@ -146,6 +150,24 @@ def register_user(email, password, role=ROLE_INSTRUCTOR, is_active=True):
     except Exception as e:
         print(f"[auth] Error registering user: {e}")
         return (False, f"Registration failed: {str(e)}")
+
+
+def clear_must_change_password(user_id):
+    """Clear the must_change_password flag after user sets a new password."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        now = datetime.now().isoformat()
+        c.execute(
+            "UPDATE users SET must_change_password = 0, updated_at = ? WHERE id = ?",
+            (now, user_id)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"[auth] Error clearing must_change_password: {e}")
+        return False
 
 
 def update_user_password(user_id, new_password):

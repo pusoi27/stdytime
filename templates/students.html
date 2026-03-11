@@ -184,7 +184,12 @@
         <td>{{ s[13] or 0 }}</td>
         <td class="col-actions">
           <a href="{{ url_for('students_edit',sid=s[0]) }}" class="btn btn-outline-info btn-sm">Edit</a>
-          <a href="{{ url_for('students_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick='return confirm("Delete student " + {{ s[1]|tojson }} + "?");'>Del</a>
+          {% if current_user and current_user.is_admin() %}
+          <form method="POST" action="{{ url_for('students_delete',sid=s[0]) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick='return confirm("Delete student " + {{ s[1]|tojson }} + "?");'>Del</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -229,8 +234,16 @@
         <td class="text-muted">{{ s[12] or '' }}</td>
         <td class="text-muted">{{ s[13] or 0 }}</td>
         <td class="col-actions">
-          <a href="{{ url_for('students_reactivate',sid=s[0]) }}" class="btn btn-outline-success btn-sm" onclick="return confirm('Reactivate student?');">Reactivate</a>
-          <a href="{{ url_for('students_permanent_delete',sid=s[0]) }}" class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete student? This cannot be undone.');">Perm Delete</a>
+          {% if current_user and current_user.is_admin() %}
+          <form method="POST" action="{{ url_for('students_reactivate',sid=s[0]) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-success btn-sm" onclick="return confirm('Reactivate student?');">Reactivate</button>
+          </form>
+          <form method="POST" action="{{ url_for('students_permanent_delete',sid=s[0]) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Permanently delete student? This cannot be undone.');">Perm Delete</button>
+          </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

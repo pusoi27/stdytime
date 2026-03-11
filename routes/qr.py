@@ -3,8 +3,9 @@ import os
 import io
 import sqlite3
 from flask import render_template, request, jsonify, send_file
-from modules import student_manager, assistant_manager, qr_generator
+from modules import student_manager, assistant_manager, qr_generator, auth_manager
 from modules.database import DB_PATH
+from routes.auth import require_login
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
@@ -18,15 +19,19 @@ def register_qr_routes(app):
     # ================================================================
     
     @app.route("/qr/generate")
+    @require_login
     def qr_generate():
         """Generate QR code for a specific student."""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         return render_template("qr_generate.html", students=students)
 
     @app.route("/qr/generate/<int:sid>", methods=["POST", "GET"])
+    @require_login
     def qr_generate_student(sid):
         """Generate and return QR code PNG for a student."""
-        student = student_manager.get_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        student = student_manager.get_student(sid, owner_user_id=owner_user_id)
         if not student:
             return "Student not found", 404
         qr_data = f"ID:{student[0]}\nName:{student[1]}"
@@ -34,9 +39,11 @@ def register_qr_routes(app):
         return send_file(path, mimetype='image/png')
 
     @app.route("/qr/generate_all", methods=["POST"])
+    @require_login
     def qr_generate_all():
         """Generate QR codes for all students where missing."""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         generated = []
         skipped = []
         errors = []
@@ -69,9 +76,11 @@ def register_qr_routes(app):
     # ================================================================
 
     @app.route("/qr/assistants/generate_all", methods=["POST"])
+    @require_login
     def qr_assistants_generate_all():
         """Generate QR codes for all assistants where missing."""
-        assistants = assistant_manager.get_all_assistants()
+        owner_user_id = auth_manager.get_current_user_id()
+        assistants = assistant_manager.get_all_assistants(owner_user_id=owner_user_id)
         generated, skipped, errors = [], [], []
         out_dir = os.path.join('assets', 'qr_codes')
         os.makedirs(out_dir, exist_ok=True)
@@ -92,9 +101,11 @@ def register_qr_routes(app):
         return jsonify({'generated': generated, 'skipped': skipped, 'errors': errors})
 
     @app.route("/qr/assistants/generate/<int:aid>", methods=["POST"])
+    @require_login
     def qr_assistant_generate(aid):
         """Generate QR code for a single assistant."""
-        assistant = assistant_manager.get_assistant(aid)
+        owner_user_id = auth_manager.get_current_user_id()
+        assistant = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not assistant:
             return "Assistant not found", 404
         out_dir = os.path.join('assets', 'qr_codes')
@@ -112,14 +123,16 @@ def register_qr_routes(app):
     # ================================================================
 
     @app.route("/qr/books/generate_all", methods=["POST"])
+    @require_login
     def qr_books_generate_all():
         """Generate QR codes for all books where missing."""
+        owner_user_id = auth_manager.get_current_user_id()
         generated, skipped, errors = [], [], []
         out_dir = os.path.join('assets', 'qr_codes')
         os.makedirs(out_dir, exist_ok=True)
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, title FROM books ORDER BY title")
+            c.execute("SELECT id, title FROM books WHERE owner_user_id = ? ORDER BY title", (owner_user_id,))
             for (bid, title) in c.fetchall():
                 try:
                     qr_name = f"book_{bid}"
@@ -135,11 +148,13 @@ def register_qr_routes(app):
         return jsonify({'generated': generated, 'skipped': skipped, 'errors': errors})
 
     @app.route("/qr/books/generate/<int:bid>", methods=["POST"])
+    @require_login
     def qr_book_generate(bid):
         """Generate QR code for a single book."""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            row = c.execute("SELECT id, title FROM books WHERE id=?", (bid,)).fetchone()
+            row = c.execute("SELECT id, title FROM books WHERE id=? AND owner_user_id=?", (bid, owner_user_id)).fetchone()
         if not row:
             return jsonify({"error": "Book not found"}), 404
         out_dir = os.path.join('assets', 'qr_codes')
@@ -157,9 +172,11 @@ def register_qr_routes(app):
     # ================================================================
 
     @app.route('/qr/pdf/individual/<int:sid>')
+    @require_login
     def qr_pdf_individual(sid):
         """Generate Avery 8160 PDF for a single student."""
-        student = student_manager.get_student(sid)
+        owner_user_id = auth_manager.get_current_user_id()
+        student = student_manager.get_student(sid, owner_user_id=owner_user_id)
         if not student:
             return "Student not found", 404
         qr_path = os.path.join(os.getcwd(), 'assets', 'qr_codes', f'student_{sid}.png')
@@ -169,9 +186,11 @@ def register_qr_routes(app):
         return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     @app.route('/qr/pdf/all')
+    @require_login
     def qr_pdf_all():
         """Generate Avery 8160 PDF for all students."""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         labels = []
         for s in students:
             sid = s[0]
@@ -182,9 +201,11 @@ def register_qr_routes(app):
         return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     @app.route('/qr/assistants/pdf')
+    @require_login
     def qr_assistants_pdf():
         """Generate Avery 8163 PDF for assistants with existing QR codes."""
-        assistants = assistant_manager.get_all_assistants()
+        owner_user_id = auth_manager.get_current_user_id()
+        assistants = assistant_manager.get_all_assistants(owner_user_id=owner_user_id)
         labels = []
         qr_dir = os.path.join('assets', 'qr_codes')
         for a in assistants:
@@ -198,9 +219,11 @@ def register_qr_routes(app):
         return send_file(pdf_buffer, as_attachment=True, download_name="assistant_qr_avery8163.pdf", mimetype='application/pdf')
 
     @app.route('/qr/assistants/pdf/individual/<int:aid>')
+    @require_login
     def qr_assistant_pdf_individual(aid):
         """Generate Avery 8163 PDF for a single assistant."""
-        assistant = assistant_manager.get_assistant(aid)
+        owner_user_id = auth_manager.get_current_user_id()
+        assistant = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not assistant:
             return "Assistant not found", 404
         qr_path = os.path.join('assets', 'qr_codes', f"assistant_{aid}.png")
@@ -211,11 +234,13 @@ def register_qr_routes(app):
         return send_file(pdf_buffer, as_attachment=True, download_name=f"assistant_{aid}_qr.pdf", mimetype='application/pdf')
 
     @app.route('/qr/books/pdf')
+    @require_login
     def qr_books_pdf():
         """Generate Avery 8163 PDF for all books with existing QR codes."""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, title FROM books ORDER BY title")
+            c.execute("SELECT id, title FROM books WHERE owner_user_id = ? ORDER BY title", (owner_user_id,))
             books = c.fetchall()
         labels = []
         qr_dir = os.path.join('assets', 'qr_codes')
@@ -230,11 +255,13 @@ def register_qr_routes(app):
         return send_file(pdf_buffer, as_attachment=True, download_name="books_qr_avery8163.pdf", mimetype='application/pdf')
 
     @app.route('/qr/books/pdf/individual/<int:bid>')
+    @require_login
     def qr_book_pdf_individual(bid):
         """Generate PDF for a single book QR."""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            row = c.execute("SELECT id, title FROM books WHERE id=?", (bid,)).fetchone()
+            row = c.execute("SELECT id, title FROM books WHERE id=? AND owner_user_id=?", (bid, owner_user_id)).fetchone()
         if not row:
             return "Book not found", 404
         qr_path = os.path.join('assets', 'qr_codes', f"book_{bid}.png")
@@ -249,11 +276,13 @@ def register_qr_routes(app):
     # ================================================================
 
     @app.route('/isbn/pdf/individual/<int:bid>')
+    @require_login
     def isbn_pdf_individual(bid):
         """Generate Avery 8160 PDF with ISBN for a single book."""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            row = c.execute("SELECT id, title, isbn13 FROM books WHERE id=?", (bid,)).fetchone()
+            row = c.execute("SELECT id, title, isbn13 FROM books WHERE id=? AND owner_user_id=?", (bid, owner_user_id)).fetchone()
         if not row:
             return "Book not found", 404
         
@@ -267,11 +296,13 @@ def register_qr_routes(app):
         return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     @app.route('/isbn/pdf/all')
+    @require_login
     def isbn_pdf_all():
         """Generate PDF with ISBN labels for all books that have valid ISBN (ISBN-13 or ISBN-10)."""
+        owner_user_id = auth_manager.get_current_user_id()
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, title, isbn13, isbn FROM books ORDER BY title")
+            c.execute("SELECT id, title, isbn13, isbn FROM books WHERE owner_user_id = ? ORDER BY title", (owner_user_id,))
             books = c.fetchall()
         
         labels = []
@@ -293,37 +324,45 @@ def register_qr_routes(app):
     # ================================================================
 
     @app.route("/qr/print/individual")
+    @require_login
     def qr_print_individual():
         """Page to select a student and print their QR code."""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         return render_template("qr_print_individual.html", students=students)
 
     @app.route("/qr/print/all")
+    @require_login
     def qr_print_all():
         """Generate and display QR codes for all active students."""
-        students = student_manager.get_all_students()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
         active_students = [s for s in students if len(s) >= 8 and s[7] == 1]
         return render_template("qr_print_all.html", students=active_students)
 
     @app.route("/qr/generate_page")
+    @require_login
     def qr_generate_page():
         """Display unified QR generation page for students, assistants, and books."""
-        students = student_manager.get_all_students()
-        assistants = assistant_manager.get_all_assistants()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
+        assistants = assistant_manager.get_all_assistants(owner_user_id=owner_user_id)
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, title FROM books ORDER BY title")
+            c.execute("SELECT id, title FROM books WHERE owner_user_id = ? ORDER BY title", (owner_user_id,))
             books = c.fetchall()
         return render_template("qr_generate_all.html", students=students, assistants=assistants, books=books)
 
     @app.route("/qr/print_page")
+    @require_login
     def qr_print_page():
         """Display unified QR print page for students, assistants, and books."""
-        students = student_manager.get_all_students()
-        assistants = assistant_manager.get_all_assistants()
+        owner_user_id = auth_manager.get_current_user_id()
+        students = student_manager.get_all_students(owner_user_id=owner_user_id)
+        assistants = assistant_manager.get_all_assistants(owner_user_id=owner_user_id)
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, title FROM books ORDER BY title")
+            c.execute("SELECT id, title FROM books WHERE owner_user_id = ? ORDER BY title", (owner_user_id,))
             books = c.fetchall()
         return render_template("qr_print_all.html", students=students, assistants=assistants, books=books)
 

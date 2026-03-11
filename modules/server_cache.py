@@ -41,23 +41,13 @@ _lock = RLock()
 _store: Dict[str, _CacheEntry] = {}
 
 
-# Shared cache keys/prefixes
+# Shared cache key base strings (all runtime keys append :u:{owner_user_id})
 STUDENTS_LIST_CACHE_KEY = "students:list:v1"
 STUDENT_GOAL_CACHE_PREFIX = "students:goal:v1:"
 BOOKS_CATALOG_CACHE_KEY = "books:catalog:v1"
 BOOK_DETAIL_CACHE_PREFIX = "books:detail:v1:"
 ASSISTANTS_PROFILE_LIST_CACHE_KEY = "assistants:profiles:list:v1"
 ASSISTANTS_DUTY_LIST_CACHE_KEY = "assistants:duty:list:v1"
-
-
-def student_goal_cache_key(student_id: int) -> str:
-	"""Build a stable cache key for one student's static profile/goals payload."""
-	return f"{STUDENT_GOAL_CACHE_PREFIX}{student_id}"
-
-
-def book_detail_cache_key(book_id: int) -> str:
-	"""Build a stable cache key for one book detail payload."""
-	return f"{BOOK_DETAIL_CACHE_PREFIX}{book_id}"
 
 
 # TTL policies (seconds)

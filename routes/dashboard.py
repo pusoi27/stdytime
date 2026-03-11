@@ -1,6 +1,7 @@
 # routes/dashboard.py
 from flask import render_template
-from modules import student_manager
+from modules import student_manager, auth_manager
+from routes.auth import require_login
 import sqlite3
 from modules.database import DB_PATH
 from datetime import datetime
@@ -8,9 +9,9 @@ from datetime import datetime
 def register_dashboard_routes(app):
     """Register dashboard and helper routes."""
     
-    def get_active_students():
+    def get_active_students(owner_user_id=1):
         """Return (name, subject, level) for currently active students."""
-        rows = student_manager.get_all_students()
+        rows = student_manager.get_all_students(owner_user_id=owner_user_id)
         active_list = []
         for r in rows:
             sid = r[0]
@@ -19,7 +20,10 @@ def register_dashboard_routes(app):
                 active_flag = r[7]
             else:
                 with sqlite3.connect(DB_PATH) as conn:
-                    active_row = conn.execute("SELECT active FROM students WHERE id=?", (sid,)).fetchone()
+                    active_row = conn.execute(
+                        "SELECT active FROM students WHERE id=? AND owner_user_id=?",
+                        (sid, owner_user_id),
+                    ).fetchone()
                     active_flag = active_row[0] if active_row else 0
             if active_flag == 1:
                 name, subj, lvl = r[1], r[2], r[3]
@@ -27,10 +31,12 @@ def register_dashboard_routes(app):
         return active_list
 
     @app.route("/")
+    @require_login
     def dashboard():
+        owner_user_id = auth_manager.get_current_user_id()
         return render_template(
             "dashboard.html",
-            active_students=get_active_students(),
+            active_students=get_active_students(owner_user_id=owner_user_id),
             assistants=[
                 ("Sarah Chen", "2 h 15 m"),
                 ("Mike Johnson", "1 h 42 m"),

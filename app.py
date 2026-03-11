@@ -10,8 +10,11 @@ from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import sqlite3
 import os
+import secrets
+import sys
 import shutil
 from dotenv import load_dotenv
+from flask_wtf.csrf import CSRFProtect
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,22 +22,38 @@ load_dotenv()
 from modules.database import init_db, DB_PATH
 from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager
 from modules.utils import format_hhmm
+from modules.rate_limiter import limiter
 
 # ================================================================
 #  Flask setup
 # ================================================================
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', "kumoclock_secret_key")
+
+_raw_secret = os.getenv('SECRET_KEY')
+if not _raw_secret:
+    _raw_secret = secrets.token_hex(32)
+    print(
+        "WARNING: SECRET_KEY not set in environment. "
+        "Sessions will not persist across restarts. "
+        "Set SECRET_KEY in your .env file.",
+        file=sys.stderr,
+    )
+app.secret_key = _raw_secret
 
 # Session configuration
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # CSRF token valid for 1 hour
 
 # Initialize / verify sqlite DB
 init_db()
+
+# Security extensions
+csrf = CSRFProtect(app)
+limiter.init_app(app)
 
 # Cleanup old payroll data (18 month retention policy)
 assistant_manager.cleanup_old_payroll_data(months=18)
@@ -158,13 +177,6 @@ def inject_now():
         date_str=now.strftime("%A, %B %d, %Y"),
         time_str=now.strftime("%I:%M:%S %p"),
     )
-
-
-@app.context_processor
-def inject_dynamic_lists():
-    """Make the in-memory active and checked lists available to templates."""
-    from routes.api import active_students_cache, checked_out_cache
-    return dict(active_list=active_students_cache, checked_list=checked_out_cache)
 
 
 @app.context_processor
@@ -332,12 +344,6 @@ def _clear_state_on_startup():
         except Exception as e:
             print('[startup] close_all_open_db_sessions failed:', e)
 
-        # Clear dashboard helper cache
-        try:
-            from routes.api import active_students_cache
-            active_students_cache.clear()
-        except Exception:
-            pass
     except Exception as e:
         print("[startup] clear_state error:", e)
 

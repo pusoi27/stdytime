@@ -25,7 +25,7 @@ def generate_report(title, entries, filename):
     c.save();  return path
 
 # --- Attendance summary for last 30 days ---
-def get_student_attendance_summary(days=30):
+def get_student_attendance_summary(days=30, owner_user_id=1):
     query = f"""
         SELECT s.name, s.subject,
                COUNT(sess.id) AS sessions,
@@ -33,8 +33,10 @@ def get_student_attendance_summary(days=30):
         FROM students AS s
         LEFT JOIN sessions AS sess
           ON s.id = sess.student_id
-         AND sess.start_time >= DATE('now','-{days} days')
+         AND sess.start_time >= DATE('now','-{days} days')
+         AND sess.owner_user_id = {int(owner_user_id)}
         WHERE s.active = 1
+          AND s.owner_user_id = {int(owner_user_id)}
         GROUP BY s.id
         ORDER BY s.name;
     """
@@ -47,7 +49,7 @@ def get_student_attendance_summary(days=30):
 
 
 # --- Assistant hours summary for last N days ---
-def get_assistant_hours_summary(days=30):
+def get_assistant_hours_summary(days=30, owner_user_id=1):
     query = f"""
         SELECT st.name,
                COUNT(a.id) AS sessions,
@@ -56,6 +58,8 @@ def get_assistant_hours_summary(days=30):
         LEFT JOIN assistant_sessions AS a
           ON st.id = a.assistant_id
          AND a.start_time >= DATE('now','-{days} days')
+         AND a.owner_user_id = {int(owner_user_id)}
+        WHERE st.owner_user_id = {int(owner_user_id)}
         GROUP BY st.id
         ORDER BY st.name;
     """
@@ -78,7 +82,7 @@ def generate_assistant_hours_report(days=30, filename=None):
     return generate_report(title, rows, filename)
 
 
-def get_assistant_hours_between(start_date, end_date):
+def get_assistant_hours_between(start_date, end_date, owner_user_id=1):
     """Return (name, sessions, total_seconds) for assistants between two dates (inclusive).
     Dates should be YYYY-MM-DD strings.
     """
@@ -90,18 +94,20 @@ def get_assistant_hours_between(start_date, end_date):
         LEFT JOIN assistant_sessions AS a
           ON st.id = a.assistant_id
          AND DATE(a.start_time) BETWEEN ? AND ?
+         AND a.owner_user_id = ?
+        WHERE st.owner_user_id = ?
         GROUP BY st.id
         ORDER BY st.name;
     """
     rows = []
     with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor(); c.execute(query, (start_date, end_date))
+        c = conn.cursor(); c.execute(query, (start_date, end_date, owner_user_id, owner_user_id))
         for (name, sessions, total_sec) in c.fetchall():
             rows.append((name, sessions, total_sec))
     return rows
 
 
-def get_assistant_sessions_between(start_date, end_date):
+def get_assistant_sessions_between(start_date, end_date, owner_user_id=1):
     """Return detailed assistant sessions between two dates (inclusive).
     Each row is (name, date, start_iso, end_iso, duration_seconds).
     Dates should be YYYY-MM-DD strings.
@@ -114,11 +120,13 @@ def get_assistant_sessions_between(start_date, end_date):
         FROM assistant_sessions AS a
         JOIN staff AS st ON st.id = a.assistant_id
         WHERE DATE(a.start_time) BETWEEN ? AND ?
+          AND a.owner_user_id = ?
+          AND st.owner_user_id = ?
         ORDER BY st.name, a.start_time;
     """
     rows = []
     with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor(); c.execute(query, (start_date, end_date))
+        c = conn.cursor(); c.execute(query, (start_date, end_date, owner_user_id, owner_user_id))
         for (name, start_iso, end_iso, duration) in c.fetchall():
             date_only = None
             try:

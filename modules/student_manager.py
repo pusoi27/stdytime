@@ -54,9 +54,9 @@ def get_student(student_id, owner_user_id=1):
         return row
 
 
-def get_student_static_profile(student_id):
+def get_student_static_profile(student_id, owner_user_id=1):
     """Get a single student by ID as a dictionary."""
-    row = get_student(student_id)
+    row = get_student(student_id, owner_user_id=owner_user_id)
     if not row:
         return None
     return {
@@ -236,9 +236,9 @@ def import_csv(file_path, owner_user_id=1):
         conn.commit()
     return {"added": added, "updated": updated, "deleted": deleted}
 
-def export_csv(path):
+def export_csv(path, owner_user_id=1):
     """Export all active students to CSV with proper alignment of headers and data."""
-    data=get_all_students()
+    data=get_all_students(owner_user_id)
     # Headers must match the order of columns returned by get_all_students()
     # get_all_students returns: id, name, subject, level, email, phone, whatsapp, active, 
     # book_loaned, paper_ws, math_goal, math_ws_per_week, reading_goal, reading_ws_per_week,
@@ -272,7 +272,7 @@ def export_csv(path):
         writer.writerows(data)
 
 
-def find_duplicates_by_name(name):
+def find_duplicates_by_name(name, owner_user_id: int = 1):
     """Find all students with a given name (case-insensitive, whitespace-trimmed)."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -280,12 +280,13 @@ def find_duplicates_by_name(name):
             SELECT id, name, email, phone, subject, day1, day1_time, day2, day2_time
             FROM students
             WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+              AND owner_user_id = ?
             ORDER BY id
-        """, (name,))
+        """, (name, owner_user_id))
         return c.fetchall()
 
 
-def get_duplicate_names():
+def get_duplicate_names(owner_user_id: int = 1):
     """Get all student names that appear more than once in the student list."""
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -293,16 +294,17 @@ def get_duplicate_names():
             SELECT LOWER(TRIM(name)) as name_key, COUNT(*) as count
             FROM students
             WHERE active = 1
+              AND owner_user_id = ?
             GROUP BY LOWER(TRIM(name))
             HAVING COUNT(*) > 1
             ORDER BY count DESC, name_key
-        """)
+        """, (owner_user_id,))
         return c.fetchall()
 
 
-def get_duplicate_summary():
+def get_duplicate_summary(owner_user_id: int = 1):
     """Get a detailed summary of all duplicate names with their student information."""
-    duplicates = get_duplicate_names()
+    duplicates = get_duplicate_names(owner_user_id)
     summary = []
     
     for name_key, count in duplicates:
@@ -314,8 +316,9 @@ def get_duplicate_summary():
                 FROM students
                 WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
                 AND active = 1
+                AND owner_user_id = ?
                 ORDER BY id
-            """, (name_key,))
+            """, (name_key, owner_user_id))
             students = c.fetchall()
             
             if students:
@@ -345,7 +348,7 @@ def get_duplicate_summary():
     return summary
 
 
-def has_duplicate_names():
+def has_duplicate_names(owner_user_id: int = 1):
     """Check if there are any duplicate names in the active student list."""
-    duplicates = get_duplicate_names()
+    duplicates = get_duplicate_names(owner_user_id)
     return len(duplicates) > 0

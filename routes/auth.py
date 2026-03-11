@@ -6,6 +6,7 @@ Handles user authentication flow and session management.
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify
 from modules import auth_manager
 from functools import wraps
+from modules.rate_limiter import limiter
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
@@ -17,6 +18,9 @@ def require_login(f):
         if 'user_id' not in session:
             flash('Please log in to access this page.', 'warning')
             return redirect(url_for('auth.login', next=request.url))
+        if session.get('must_change_password'):
+            flash('You must set a new password before continuing.', 'warning')
+            return redirect(url_for('auth.change_password'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -39,6 +43,7 @@ def require_admin(f):
 
 
 @auth_bp.route('/login', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", error_message="Too many login attempts. Please wait a minute and try again.")
 def login():
     """Handle user login. GET shows form, POST processes credentials."""
     
@@ -65,6 +70,11 @@ def login():
             session['role'] = user.role
             session.permanent = True  # Session persists across browser restarts
             
+            if user.must_change_password:
+                session['must_change_password'] = True
+                flash('Welcome! Please set a new password to continue.', 'warning')
+                return redirect(url_for('auth.change_password'))
+            
             flash(f'Welcome, {user.email}!', 'success')
             
             # Redirect to next page if provided, otherwise dashboard
@@ -85,6 +95,39 @@ def logout():
     session.clear()
     flash('You have been logged out successfully.', 'success')
     return redirect(url_for('auth.login'))
+
+
+@auth_bp.route('/change-password', methods=['GET', 'POST'])
+def change_password():
+    """Force password change for users flagged with must_change_password."""
+    if 'user_id' not in session:
+        return redirect(url_for('auth.login'))
+
+    user_id = session['user_id']
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not new_password or not confirm_password:
+            flash('Both password fields are required.', 'danger')
+            return render_template('auth/change_password.html')
+
+        if new_password != confirm_password:
+            flash('Passwords do not match.', 'danger')
+            return render_template('auth/change_password.html')
+
+        success, message = auth_manager.update_user_password(user_id, new_password)
+        if not success:
+            flash(f'Could not update password: {message}', 'danger')
+            return render_template('auth/change_password.html')
+
+        auth_manager.clear_must_change_password(user_id)
+        session.pop('must_change_password', None)
+        flash('Password updated successfully. Welcome!', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('auth/change_password.html')
 
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
