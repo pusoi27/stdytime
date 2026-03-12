@@ -152,6 +152,108 @@ def register_user(email, password, role=ROLE_INSTRUCTOR, is_active=True):
         return (False, f"Registration failed: {str(e)}")
 
 
+def initialize_new_user_data(user_id: int):
+    """Seed a newly registered user with starter records.
+
+    Creates:
+    - 2 fictitious students
+    - 2 fictitious assistants
+    - A copy of existing book titles with available=0 and copies=0
+
+    Existing data for the user is left untouched (idempotent behavior).
+    Returns (success: bool, message: str).
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        # Seed two fictitious students if user has no students yet
+        student_count = c.execute(
+            "SELECT COUNT(*) FROM students WHERE owner_user_id = ?",
+            (user_id,),
+        ).fetchone()[0]
+
+        if student_count == 0:
+            fictitious_students = [
+                ("Ava Thompson", "S1", "ava.thompson@example.com", "555-0101", user_id),
+                ("Liam Carter", "S2", "liam.carter@example.com", "555-0102", user_id),
+            ]
+            c.executemany(
+                """
+                INSERT INTO students (name, subject, email, phone, active, owner_user_id)
+                VALUES (?, ?, ?, ?, 1, ?)
+                """,
+                fictitious_students,
+            )
+
+        # Seed two fictitious assistants if user has no staff yet
+        assistant_count = c.execute(
+            "SELECT COUNT(*) FROM staff WHERE owner_user_id = ?",
+            (user_id,),
+        ).fetchone()[0]
+
+        if assistant_count == 0:
+            fictitious_assistants = [
+                ("Noah Bennett", "Assistant", "noah.bennett@example.com", "555-0201", user_id),
+                ("Mia Rodriguez", "Assistant", "mia.rodriguez@example.com", "555-0202", user_id),
+            ]
+            c.executemany(
+                """
+                INSERT INTO staff (name, role, email, phone, owner_user_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                fictitious_assistants,
+            )
+
+        # Copy existing book catalog for this user if user has no books yet.
+        # Keep titles/metadata, but force unavailable with copies erased (0).
+        book_count = c.execute(
+            "SELECT COUNT(*) FROM books WHERE owner_user_id = ?",
+            (user_id,),
+        ).fetchone()[0]
+
+        if book_count == 0:
+            source_books = c.execute(
+                """
+                SELECT title, author, isbn, isbn13, publisher, reading_level
+                FROM books
+                WHERE owner_user_id = 1
+                ORDER BY title
+                """
+            ).fetchall()
+
+            if not source_books:
+                source_books = c.execute(
+                    """
+                    SELECT title, author, isbn, isbn13, publisher, reading_level
+                    FROM books
+                    WHERE title IS NOT NULL AND TRIM(title) != ''
+                    ORDER BY title
+                    """
+                ).fetchall()
+
+            if source_books:
+                c.executemany(
+                    """
+                    INSERT INTO books (
+                        title, author, isbn, isbn13, publisher, available, reading_level, copies, borrower_id, owner_user_id
+                    )
+                    VALUES (?, ?, ?, ?, ?, 0, ?, 0, NULL, ?)
+                    """,
+                    [
+                        (title, author, isbn, isbn13, publisher, reading_level, user_id)
+                        for (title, author, isbn, isbn13, publisher, reading_level) in source_books
+                    ],
+                )
+
+        conn.commit()
+        conn.close()
+        return (True, "Starter data initialized")
+    except Exception as e:
+        print(f"[auth] Error initializing starter data for user {user_id}: {e}")
+        return (False, f"Starter data initialization failed: {str(e)}")
+
+
 def clear_must_change_password(user_id):
     """Clear the must_change_password flag after user sets a new password."""
     try:

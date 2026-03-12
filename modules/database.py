@@ -153,16 +153,32 @@ def init_db():
         c.execute("INSERT INTO books (title,author,isbn,available,reading_level)"
                   " VALUES (?,?,?,?,?)",
                   ("Mathematics Basics","KumoPress","111222333",1,"5A"))
-    # Create default admin user (email: admin@kumoclock.local, password: KumoClock@2025)
-    # NOTE: Users should change this password on first login
-    if not c.execute("SELECT COUNT(*) FROM users").fetchone()[0]:
-        from werkzeug.security import generate_password_hash
-        default_admin_hash = generate_password_hash("KumoClock@2025", method='pbkdf2:sha256')
-        now = datetime.now().isoformat()
+    # Ensure super admin user exists with global administrator rights.
+    # Requested credentials:
+    #   Email:    admin@kumoclock
+    #   Password: KumoClock$admin
+    # If the account already exists, it is updated to remain active and admin.
+    from werkzeug.security import generate_password_hash
+    super_admin_email = "admin@kumoclock"
+    super_admin_password_hash = generate_password_hash("KumoClock$admin", method='pbkdf2:sha256')
+    now = datetime.now().isoformat()
+
+    existing_super_admin = c.execute(
+        "SELECT id FROM users WHERE email = ?",
+        (super_admin_email,)
+    ).fetchone()
+
+    if existing_super_admin:
         c.execute("""
-            INSERT INTO users (email, password_hash, role, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, ("admin@kumoclock.local", default_admin_hash, "admin", 1, now, now))
+            UPDATE users
+            SET password_hash = ?, role = 'admin', is_active = 1, must_change_password = 0, updated_at = ?
+            WHERE email = ?
+        """, (super_admin_password_hash, now, super_admin_email))
+    else:
+        c.execute("""
+            INSERT INTO users (email, password_hash, role, is_active, must_change_password, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (super_admin_email, super_admin_password_hash, "admin", 1, 0, now, now))
     conn.commit(); conn.close()
 
     # Ensure additional columns exist on students table (migration for additional fields)

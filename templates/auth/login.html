@@ -105,6 +105,19 @@
             margin-top: 20px;
             font-size: 0.9rem;
         }
+        .register-path {
+            margin-top: 16px;
+            text-align: center;
+            font-size: 0.95rem;
+        }
+        .register-path a {
+            font-weight: 700;
+            color: #667eea;
+            text-decoration: none;
+        }
+        .register-path a:hover {
+            text-decoration: underline;
+        }
         .demo-credentials strong {
             color: #667eea;
         }
@@ -160,10 +173,13 @@
         </form>
 
         <div class="demo-credentials">
-            <strong>Demo Credentials:</strong><br>
-            Email: <code>admin@kumoclock.local</code><br>
-            Password: <code>KumoClock@2025</code><br>
-            <small>(Please change on first login)</small>
+            <strong>Admin Credentials:</strong><br>
+            Email: <code>admin@kumoclock</code><br>
+            Password: <code>KumoClock$admin</code>
+        </div>
+
+        <div class="register-path">
+            New here? <a href="{{ url_for('auth.register') }}">Create a new account</a>
         </div>
 
         <div class="login-footer">

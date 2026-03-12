@@ -132,19 +132,20 @@ def change_password():
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
-    """Handle user registration. Admin-only by default (can be changed to invite-based)."""
-    
-    # For now, registration is admin-only
-    # If you want public registration, remove this check
-    if 'user_id' not in session or session.get('role') != 'admin':
-        flash('Registration is currently admin-only.', 'warning')
-        return redirect(url_for('auth.login'))
+    """Handle user registration (public registration enabled)."""
     
     if request.method == 'POST':
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
-        role = request.form.get('role', 'instructor')
+        role = request.form.get('role', 'instructor').strip().lower()
+
+        # Public registration defaults to non-admin roles.
+        # Admins can still create admin users when logged in.
+        if role not in (auth_manager.ROLE_INSTRUCTOR, auth_manager.ROLE_ASSISTANT, auth_manager.ROLE_ADMIN):
+            role = auth_manager.ROLE_INSTRUCTOR
+        if role == auth_manager.ROLE_ADMIN and session.get('role') != auth_manager.ROLE_ADMIN:
+            role = auth_manager.ROLE_INSTRUCTOR
         
         # Validate inputs
         if not email or not password:
@@ -167,6 +168,9 @@ def register():
         success, user_id_or_error = auth_manager.register_user(email, password, role=role)
         
         if success:
+            init_ok, init_msg = auth_manager.initialize_new_user_data(user_id_or_error)
+            if not init_ok:
+                flash(f'Account created for {email}, but starter data setup had an issue: {init_msg}', 'warning')
             flash(f'User {email} registered successfully with role "{role}".', 'success')
             return redirect(url_for('auth.login'))
         else:
