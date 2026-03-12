@@ -1,12 +1,13 @@
 """
 Utilities routes for KumoClock
-- Student Report Card
+- Student Activity Card
 - Student Evaluation  
 - Award Ceremony Analysis
 """
 
 from flask import Blueprint, render_template, request, jsonify, send_file, session
 from datetime import datetime
+import io
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,9 @@ import numpy as np
 from werkzeug.utils import secure_filename
 import re
 import calendar
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.pdfgen import canvas
 
 # Add parent directory to path for module imports
 PARENT_DIR = Path(__file__).resolve().parents[2]
@@ -162,11 +166,11 @@ def register_utilities_routes(app):
                 'error': str(e)
             }), 500
     
-    # ==================== Student Report Card ====================
+    # ==================== Student Activity Card ====================
     @app.route('/utilities/report-card')
     @require_login
     def report_card_page():
-        """Student Report Card page"""
+        """Student Activity Card page"""
         owner_user_id = auth_manager.get_current_user_id()
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -235,7 +239,7 @@ def register_utilities_routes(app):
     @app.route('/api/utilities/report-card/<int:student_id>', methods=['GET'])
     @require_login
     def api_get_report_card(student_id):
-        """Get student report card data"""
+        """Get student activity card data"""
         owner_user_id = auth_manager.get_current_user_id()
         try:
             conn = get_db_connection()
@@ -378,13 +382,229 @@ def register_utilities_routes(app):
             return jsonify({'error': str(e)}), 500
     
     @app.route('/api/utilities/report-card/export/<int:student_id>', methods=['GET'])
+    @app.route('/api/utilities/activity-card/export/<int:student_id>', methods=['GET'])
     @require_login
     def api_export_report_card(student_id):
-        """Export report card as PDF/CSV"""
+        """Export an individual student activity card as PDF (same content model as email report)."""
         try:
-            # This would generate a PDF report
-            # For now, return a basic response
-            return jsonify({'message': 'Report card export functionality coming soon'})
+            owner_user_id = auth_manager.get_current_user_id()
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                'SELECT id, name, email, phone, active, subject FROM students WHERE id = ? AND owner_user_id = ?',
+                (student_id, owner_user_id),
+            )
+            student = cursor.fetchone()
+
+            if not student:
+                conn.close()
+                return jsonify({'error': 'Student not found'}), 404
+            conn.close()
+
+            student_name = student[1] or ''
+
+            def _as_positive_number(val):
+                if val is None:
+                    return None
+                try:
+                    num = float(val)
+                    return num if num > 0 else None
+                except (TypeError, ValueError):
+                    return None
+
+            def _parse_date(date_str: str):
+                if not date_str:
+                    return None
+                candidates = ["%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y", "%m-%d-%y"]
+                s = str(date_str).strip()
+                for fmt in candidates:
+                    try:
+                        return datetime.strptime(s, fmt).date()
+                    except Exception:
+                        continue
+                return None
+
+            def _business_days(start_date, end_date):
+                if not start_date or not end_date:
+                    return None
+                if end_date < start_date:
+                    return None
+                total_days = (end_date - start_date).days + 1
+                weeks = total_days // 7
+                extra = total_days % 7
+                business = weeks * 5
+                start_weekday = start_date.weekday()  # Monday=0
+                for i in range(extra):
+                    if (start_weekday + i) % 7 < 5:
+                        business += 1
+                return business
+
+            def zero_if_missing(val):
+                if val is None:
+                    return 0
+                if isinstance(val, str) and val.strip() == '':
+                    return 0
+                return val
+
+            # Build unified rows exactly from loaded report payloads (same source used for email)
+            structured_rows = []
+            token = session.get('report_card_token')
+            for subject_key in ['math', 'reading']:
+                payload = _load_subject_payload(token, subject_key) if token else None
+                if not payload:
+                    continue
+
+                def get_field(record, candidate_keys):
+                    lower_map = {str(k).lower(): v for k, v in record.items()}
+                    for key in candidate_keys:
+                        if key.lower() in lower_map:
+                            return lower_map[key.lower()]
+                    return None
+
+                subject_label = (payload.get('subject') or subject_key.title()).strip()
+                report_dates = None
+                try:
+                    report_dates = (payload.get('parse_meta') or {}).get('report_dates')
+                    if not report_dates:
+                        report_dates = _parse_report_dates(payload.get('filename', ''))
+                except Exception:
+                    report_dates = _parse_report_dates(payload.get('filename', ''))
+
+                for record in payload.get('data', []):
+                    status = get_field(record, ['Current Subject Status', 'Status'])
+                    status_str = str(status).strip() if status is not None else ''
+                    if status_str.lower() == 'inactive':
+                        continue
+                    full_name = get_field(record, ['Full Name', 'Student Name', 'Name']) or ''
+                    if str(full_name).strip().lower() != student_name.strip().lower():
+                        continue
+
+                    structured_rows.append({
+                        'subject': subject_label,
+                        'full_name': full_name,
+                        'highest_ws_completed': get_field(record, ['Highest WS Completed', 'Highest WS Completed This Month']) or '',
+                        'num_ws': zero_if_missing(get_field(record, ['# of WS', 'Number of Worksheets'])),
+                        'study_days': zero_if_missing(get_field(record, ['# of Study Days', 'Study Days'])),
+                        'cum_study_time': zero_if_missing(get_field(record, ['Cum. Study Time', 'Cumulative Study Time'])),
+                        'current_subject_status': status_str or '',
+                        'start_date': (report_dates or {}).get('start_date') if report_dates else None,
+                        'end_date': (report_dates or {}).get('end_date') if report_dates else None
+                    })
+
+            if not structured_rows:
+                return jsonify({'error': 'No report data available for this student. Load report files and generate report first.'}), 400
+
+            # Same target worksheet logic as email report
+            from modules.student_manager import get_student
+            srow = get_student(student_id, owner_user_id=owner_user_id)
+            student_math_ws_per_week = _as_positive_number(srow[10] if srow and len(srow) > 10 else None)
+            student_reading_ws_per_week = _as_positive_number(srow[12] if srow and len(srow) > 12 else None)
+
+            combined_report = {
+                'student_name': student_name,
+                'subjects': []
+            }
+
+            for record in structured_rows:
+                subject_name = record.get('subject', 'N/A')
+                highest_ws = record.get('highest_ws_completed')
+                start_date_parsed = _parse_date(record.get('start_date'))
+                end_date_parsed = _parse_date(record.get('end_date'))
+                business_days = _business_days(start_date_parsed, end_date_parsed)
+                target_ws = None
+
+                if business_days is not None:
+                    weeks = business_days / 5.0
+                    math_ws = _as_positive_number(student_math_ws_per_week)
+                    reading_ws = _as_positive_number(student_reading_ws_per_week)
+                    if subject_name and 'math' in subject_name.lower() and math_ws:
+                        target_ws = int(weeks * math_ws)
+                    elif subject_name and 'reading' in subject_name.lower() and reading_ws:
+                        target_ws = int(weeks * reading_ws)
+                    elif math_ws:
+                        target_ws = int(weeks * math_ws)
+                    else:
+                        subj_key = subject_name.lower() if isinstance(subject_name, str) else None
+                        worksheets_per_day = get_worksheets_per_day(normalize_level(highest_ws), subject=subj_key)
+                        if worksheets_per_day is not None:
+                            target_ws = int(business_days * worksheets_per_day)
+
+                combined_report['subjects'].append({
+                    'subject': subject_name,
+                    'target_ws': target_ws if target_ws is not None else 'N/A',
+                    'num_ws': zero_if_missing(record.get('num_ws', 'N/A')),
+                    'study_period': business_days if business_days is not None else 'N/A',
+                    'study_days': zero_if_missing(record.get('study_days', 'N/A')),
+                    'cum_study_time': zero_if_missing(record.get('cum_study_time', 'N/A')),
+                    'current_subject_status': record.get('current_subject_status', 'N/A'),
+                    'start_date': record.get('start_date'),
+                    'end_date': record.get('end_date')
+                })
+
+            buffer = io.BytesIO()
+            pdf = canvas.Canvas(buffer, pagesize=letter)
+            _, height = letter
+            y = height - 0.8 * inch
+
+            pdf.setFont('Helvetica-Bold', 18)
+            pdf.drawString(0.8 * inch, y, 'Student Activity Card')
+            y -= 0.25 * inch
+
+            pdf.setFont('Helvetica', 10)
+            generated_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+            pdf.drawString(0.8 * inch, y, f'Generated: {generated_at}')
+            y -= 0.25 * inch
+
+            pdf.setFont('Helvetica', 11)
+            pdf.drawString(0.8 * inch, y, f'Student: {student_name}')
+            y -= 0.25 * inch
+
+            for subj in combined_report['subjects']:
+                if y < 2.0 * inch:
+                    pdf.showPage()
+                    y = height - 0.8 * inch
+                    pdf.setFont('Helvetica-Bold', 18)
+                    pdf.drawString(0.8 * inch, y, 'Student Activity Card')
+                    y -= 0.35 * inch
+                    pdf.setFont('Helvetica', 11)
+                    pdf.drawString(0.8 * inch, y, f'Student: {student_name}')
+                    y -= 0.25 * inch
+
+                pdf.setFont('Helvetica-Bold', 12)
+                pdf.drawString(0.8 * inch, y, f"Subject: {subj['subject']}")
+                y -= 0.2 * inch
+                pdf.setFont('Helvetica', 10)
+                pdf.drawString(0.9 * inch, y, f"Report Date Range: {(subj.get('start_date') or 'N/A')} to {(subj.get('end_date') or 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Target # Worksheets: {subj.get('target_ws', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Number Of Worksheets Completed: {subj.get('num_ws', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Study Period: {subj.get('study_period', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Study Days: {subj.get('study_days', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Cumulative Study Time: {subj.get('cum_study_time', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Current Subject Status: {subj.get('current_subject_status', 'N/A')}")
+                y -= 0.25 * inch
+                pdf.line(0.8 * inch, y, 7.7 * inch, y)
+                y -= 0.22 * inch
+
+            pdf.save()
+            buffer.seek(0)
+
+            safe_name = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in student_name).strip('_') or f'student_{student_id}'
+            filename = f'{safe_name}_activity_card_{datetime.now().strftime("%Y%m%d")}.pdf'
+
+            return send_file(
+                buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename,
+            )
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
@@ -583,7 +803,7 @@ def register_utilities_routes(app):
     @app.route('/api/utilities/report-card/send-email', methods=['POST'])
     @require_login
     def api_send_report_email():
-        """Send student report card via email"""
+        """Send student activity card via email"""
         try:
             data = request.get_json()
             
@@ -754,13 +974,13 @@ def register_utilities_routes(app):
                 })
             
             # Create email subject and body
-            subject = f"Student Report Card - {student_name}"
+            subject = f"Student Activity Card - {student_name}"
             
             # Plain text body
             body = f"""
 Dear Parent/Guardian,
 
-Please find below the report card for {student_name}.
+Please find below the student activity card for {student_name}.
 
 *** DO NOT REPLY TO THIS EMAIL ***
 
@@ -807,12 +1027,12 @@ This is an automated message. Please do not reply.
 </head>
 <body>
     <div class="header">
-        <h2>🎓 Student Report Card</h2>
+        <h2>🎓 Student Activity Card</h2>
         <p>{center_location}</p>
     </div>
     <div class="content">
         <p>Dear Parent/Guardian,</p>
-        <p>Please find below the report card for <strong>{student_name}</strong>.</p>
+        <p>Please find below the student activity card for <strong>{student_name}</strong>.</p>
         <div style="padding:10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; color:#856404; margin-bottom:15px;">
             <strong>Do not reply:</strong> This mailbox is not monitored.
         </div>
@@ -924,7 +1144,7 @@ This is an automated message. Please do not reply.
 
             # Return combined result
             if sent_count > 0:
-                message = f'Report card sent to {sent_count} recipient(s): {", ".join(email_recipients)}'
+                message = f'Student activity card sent to {sent_count} recipient(s): {", ".join(email_recipients)}'
                 if errors:
                     message += f'. Errors: {"; ".join(errors)}'
                 return jsonify({
@@ -950,6 +1170,183 @@ This is an automated message. Please do not reply.
             }), 500
     
     
+    @app.route('/api/utilities/activity-card/print-pdf', methods=['POST'])
+    @require_login
+    def api_activity_card_print_pdf():
+        """Generate printable PDF using the same data payload as Email Student Activity Card."""
+        try:
+            data = request.get_json(silent=True) or {}
+            student_name = data.get('student_name')
+            student_id = data.get('student_id')
+            report_data = data.get('report_data', [])
+
+            if not student_name or not report_data:
+                return jsonify({'error': 'Student name and report data are required'}), 400
+
+            def _as_positive_number(val):
+                if val is None:
+                    return None
+                try:
+                    num = float(val)
+                    return num if num > 0 else None
+                except (TypeError, ValueError):
+                    return None
+
+            def _parse_date(date_str: str):
+                if not date_str:
+                    return None
+                candidates = ["%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m-%d-%Y", "%m-%d-%y"]
+                s = str(date_str).strip()
+                for fmt in candidates:
+                    try:
+                        return datetime.strptime(s, fmt).date()
+                    except Exception:
+                        continue
+                return None
+
+            def _business_days(start_date, end_date):
+                if not start_date or not end_date:
+                    return None
+                if end_date < start_date:
+                    return None
+                total_days = (end_date - start_date).days + 1
+                weeks = total_days // 7
+                extra = total_days % 7
+                business = weeks * 5
+                start_weekday = start_date.weekday()  # Monday=0
+                for i in range(extra):
+                    if (start_weekday + i) % 7 < 5:
+                        business += 1
+                return business
+
+            def zero_if_missing(val):
+                if val is None:
+                    return 0
+                if isinstance(val, str) and val.strip() == '':
+                    return 0
+                return val
+
+            student_math_ws_per_week = None
+            student_reading_ws_per_week = None
+            if student_id:
+                try:
+                    from modules.student_manager import get_student
+                    student = get_student(student_id, owner_user_id=auth_manager.get_current_user_id())
+                    if student:
+                        student_math_ws_per_week = _as_positive_number(student[10] if len(student) > 10 else None)
+                        student_reading_ws_per_week = _as_positive_number(student[12] if len(student) > 12 else None)
+                except Exception:
+                    pass
+
+            combined_report = {
+                'student_name': student_name,
+                'subjects': []
+            }
+
+            for record in report_data:
+                subject_name = record.get('subject', 'N/A')
+                highest_ws = record.get('highest_ws_completed')
+                start_date_parsed = _parse_date(record.get('start_date'))
+                end_date_parsed = _parse_date(record.get('end_date'))
+                business_days = _business_days(start_date_parsed, end_date_parsed)
+                target_ws = None
+
+                if business_days is not None:
+                    weeks = business_days / 5.0
+                    math_ws = _as_positive_number(student_math_ws_per_week)
+                    reading_ws = _as_positive_number(student_reading_ws_per_week)
+
+                    if subject_name and 'math' in subject_name.lower() and math_ws:
+                        target_ws = int(weeks * math_ws)
+                    elif subject_name and 'reading' in subject_name.lower() and reading_ws:
+                        target_ws = int(weeks * reading_ws)
+                    elif math_ws:
+                        target_ws = int(weeks * math_ws)
+                    else:
+                        subj_key = subject_name.lower() if isinstance(subject_name, str) else None
+                        worksheets_per_day = get_worksheets_per_day(normalize_level(highest_ws), subject=subj_key)
+                        if worksheets_per_day is not None:
+                            target_ws = int(business_days * worksheets_per_day)
+
+                combined_report['subjects'].append({
+                    'subject': subject_name,
+                    'target_ws': target_ws if target_ws is not None else 'N/A',
+                    'num_ws': zero_if_missing(record.get('num_ws', 'N/A')),
+                    'study_period': business_days if business_days is not None else 'N/A',
+                    'study_days': zero_if_missing(record.get('study_days', 'N/A')),
+                    'cum_study_time': zero_if_missing(record.get('cum_study_time', 'N/A')),
+                    'current_subject_status': record.get('current_subject_status', 'N/A'),
+                    'start_date': record.get('start_date'),
+                    'end_date': record.get('end_date')
+                })
+
+            if not combined_report['subjects']:
+                return jsonify({'error': 'No printable subject data found for this student'}), 400
+
+            buffer = io.BytesIO()
+            pdf = canvas.Canvas(buffer, pagesize=letter)
+            _, height = letter
+            y = height - 0.8 * inch
+
+            pdf.setFont('Helvetica-Bold', 18)
+            pdf.drawString(0.8 * inch, y, 'Student Activity Card')
+            y -= 0.25 * inch
+            pdf.setFont('Helvetica', 10)
+            generated_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+            pdf.drawString(0.8 * inch, y, f'Generated: {generated_at}')
+            y -= 0.25 * inch
+            pdf.setFont('Helvetica', 11)
+            pdf.drawString(0.8 * inch, y, f'Student: {student_name}')
+            y -= 0.30 * inch
+
+            for subj in combined_report['subjects']:
+                if y < 2.0 * inch:
+                    pdf.showPage()
+                    y = height - 0.8 * inch
+                    pdf.setFont('Helvetica-Bold', 18)
+                    pdf.drawString(0.8 * inch, y, 'Student Activity Card')
+                    y -= 0.35 * inch
+                    pdf.setFont('Helvetica', 11)
+                    pdf.drawString(0.8 * inch, y, f'Student: {student_name}')
+                    y -= 0.25 * inch
+
+                pdf.setFont('Helvetica-Bold', 12)
+                pdf.drawString(0.8 * inch, y, f"Subject: {subj['subject']}")
+                y -= 0.2 * inch
+                pdf.setFont('Helvetica', 10)
+                pdf.drawString(0.9 * inch, y, f"Report Date Range: {(subj.get('start_date') or 'N/A')} to {(subj.get('end_date') or 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Target # Worksheets: {subj.get('target_ws', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Number Of Worksheets Completed: {subj.get('num_ws', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Study Period: {subj.get('study_period', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Study Days: {subj.get('study_days', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Cumulative Study Time: {subj.get('cum_study_time', 'N/A')}")
+                y -= 0.18 * inch
+                pdf.drawString(0.9 * inch, y, f"Current Subject Status: {subj.get('current_subject_status', 'N/A')}")
+                y -= 0.25 * inch
+                pdf.line(0.8 * inch, y, 7.7 * inch, y)
+                y -= 0.22 * inch
+
+            pdf.save()
+            buffer.seek(0)
+            safe_name = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in student_name).strip('_') or 'student'
+            filename = f'{safe_name}_activity_card_{datetime.now().strftime("%Y%m%d")}.pdf'
+
+            return send_file(
+                buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename,
+            )
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+
     # ==================== Student Evaluation ====================
     @app.route('/utilities/evaluation')
     @require_login

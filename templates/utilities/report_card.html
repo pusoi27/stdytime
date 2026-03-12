@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Student Report Card - KumoClock{% endblock %}
+{% block title %}Student Activity Card - KumoClock{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
     <div class="row mb-4">
         <div class="col-md-12">
-            <h2><i class="bi bi-file-text"></i> Student Report Card</h2>
+            <h2><i class="bi bi-file-text"></i> Student Activity Card</h2>
             <p class="text-muted">Load Math and Reading files to generate student performance report</p>
         </div>
     </div>
@@ -31,7 +31,7 @@
         <div class="col-md-12">
             <div class="card shadow-sm bg-light">
                 <div class="card-body">
-                    <h6 class="mb-3"><i class="bi bi-envelope"></i> Email Report Card</h6>
+                    <h6 class="mb-3"><i class="bi bi-envelope"></i> Student Activity Card Actions</h6>
                     <div class="row">
                         <div class="col-md-6">
                             <label for="studentSelect" class="form-label">Select Student:</label>
@@ -40,6 +40,9 @@
                             </select>
                         </div>
                         <div class="col-md-6 d-flex align-items-end flex-wrap gap-2 justify-content-end">
+                            <button class="btn btn-outline-dark btn-lg" onclick="printStudentActivityCardPDF()" id="pdfButton" disabled>
+                                <i class="bi bi-printer"></i> Print to PDF
+                            </button>
                             <button class="btn btn-success btn-lg" onclick="openEmailModal()" id="emailButton" disabled>
                                 <i class="bi bi-envelope-fill"></i> Email Report
                             </button>
@@ -147,8 +150,8 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
-                <h5 class="modal-title" id="emailModalLabel">
-                    <i class="bi bi-envelope-fill"></i> Email Student Report Card
+                    <h5 class="modal-title" id="emailModalLabel">
+                    <i class="bi bi-envelope-fill"></i> Email Student Activity Card
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -444,12 +447,86 @@ function populateStudentDropdown(students) {
 function updateSelectedStudent() {
     const select = document.getElementById('studentSelect');
     const emailButton = document.getElementById('emailButton');
+    const pdfButton = document.getElementById('pdfButton');
     
     if (select.value) {
         emailButton.disabled = false;
+        if (pdfButton) pdfButton.disabled = false;
     } else {
         emailButton.disabled = true;
+        if (pdfButton) pdfButton.disabled = true;
     }
+}
+
+function printStudentActivityCardPDF() {
+    const select = document.getElementById('studentSelect');
+    const studentName = (select && select.value) ? select.value : '';
+
+    if (!studentName) {
+        alert('Please select a student first.');
+        return;
+    }
+
+    const studentRecords = currentReportData.filter(s => s.full_name === studentName);
+    if (!studentRecords.length) {
+        alert('No activity data found for this student. Please generate the report first.');
+        return;
+    }
+
+    fetch('/api/utilities/get-student-email-by-name', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ full_name: studentName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data || !data.success || !data.student_id) {
+            throw new Error((data && data.error) ? data.error : 'Could not resolve student ID for PDF print.');
+        }
+
+        return fetch('/api/utilities/activity-card/print-pdf', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                student_name: studentName,
+                student_id: data.student_id,
+                report_data: studentRecords
+            })
+        });
+    })
+    .then(async (response) => {
+        if (!response.ok) {
+            let errMessage = 'Unable to generate print PDF.';
+            try {
+                const err = await response.json();
+                if (err && (err.error || err.message)) {
+                    errMessage = err.error || err.message;
+                }
+            } catch (_) {}
+            throw new Error(errMessage);
+        }
+
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const printWindow = window.open(url, '_blank');
+        if (!printWindow) {
+            // Fallback if popup blocked
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${studentName.replace(/\s+/g, '_')}_activity_card.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+        setTimeout(() => window.URL.revokeObjectURL(url), 30000);
+    })
+    .catch(error => {
+        alert('Unable to print PDF: ' + error.message);
+    });
 }
 
 // ===== Helpers for target worksheet calculation (mirror of backend logic) =====
