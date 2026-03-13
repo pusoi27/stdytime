@@ -19,15 +19,14 @@ students (
     email TEXT,
     phone TEXT,
     active INTEGER DEFAULT 1,
-    photo TEXT,              -- [MIGRATED]
-    whatsapp TEXT           -- [MIGRATED]
+    photo TEXT              -- [MIGRATED]
 )
 ```
 
 ### ✅ Strengths
 - **Simple, flat structure** - Easy to understand and query
 - **Auto-increment IDs** - Built-in primary key management
-- **Migration support** - Includes fallback logic for missing columns (photo, whatsapp)
+- **Migration support** - Includes fallback logic for missing columns (photo)
 - **Boolean flags** - Uses INTEGER (0/1) for book_loaned, paper_ws, active status
 - **Foreign key relationships** - Sessions and books properly reference student IDs
 

@@ -138,7 +138,6 @@
         <th class="col-time">Day 2 Time</th>
         <th>Email</th>
         <th>Phone</th>
-        <th>WhatsApp</th>
         <th class="col-qr">QR</th>
         <th class="col-checkbox">Book Loan</th>
         <th>Math Goal</th>
@@ -170,7 +169,6 @@
         <td class="col-time">{{ format_time_12hr(s[20]) }}</td>
         <td>{{ s[4] }}</td>
         <td>{{ s[5] }}</td>
-        <td>{{ s[6] }}</td>
         <td class="col-qr">
           {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
           <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'">
@@ -197,7 +195,7 @@
       <!-- Deleted Students Section -->
       {% if deleted_students %}
       <tr>
-        <td colspan="20" class="table-section-header bg-light px-3 py-2">
+        <td colspan="19" class="table-section-header bg-light px-3 py-2">
           <strong class="text-muted">Deleted Students</strong>
         </td>
       </tr>
@@ -221,7 +219,6 @@
         <td class="col-time text-muted">{{ format_time_12hr(s[20]) }}</td>
         <td class="text-muted">{{ s[4] }}</td>
         <td class="text-muted">{{ s[5] }}</td>
-        <td class="text-muted">{{ s[6] }}</td>
         <td class="col-qr">
           {% set qr_file = 'student_' ~ s[0] ~ '.png' %}
           <img src="/assets/qr_codes/{{ qr_file }}" alt="QR" width="48" height="48" onerror="this.src='/static/img/default.png'" style="opacity: 0.5;">

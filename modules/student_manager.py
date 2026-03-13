@@ -27,7 +27,7 @@ def get_all_students(owner_user_id=1):
         c = conn.cursor()
         # Get only active student data for this owner
         c.execute("""
-            SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.active, s.book_loaned, s.paper_ws,
+            SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, '' AS legacy_contact, s.active, s.book_loaned, s.paper_ws,
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
                    s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
@@ -47,7 +47,7 @@ def get_student(student_id, owner_user_id=1):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         row = c.execute("""
-            SELECT id,name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,
+            SELECT id,name,subject,email,phone,'' AS legacy_contact,active,book_loaned,paper_ws,math_goal,math_ws_per_week,
                    reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time 
             FROM students WHERE id=? AND owner_user_id=?
         """, (student_id, owner_user_id)).fetchone()
@@ -65,7 +65,6 @@ def get_student_static_profile(student_id, owner_user_id=1):
         'subject': row[2],
         'email': row[3],
         'phone': row[4],
-        'whatsapp': row[5],
         'active': row[6],
         'book_loaned': row[7],
         'paper_ws': row[8],
@@ -83,7 +82,7 @@ def get_student_static_profile(student_id, owner_user_id=1):
     }
 
 
-def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
+def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
     """Add a new student to the database and automatically generate QR code.
     
     Args:
@@ -92,9 +91,9 @@ def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_w
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO students
-            (name,subject,email,phone,whatsapp,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time,owner_user_id)
-            VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (name, subject, email, phone, whatsapp, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week), int(bool(el)), int(bool(pi)), int(bool(v)), day1, day2, day1_time, day2_time, owner_user_id))
+            (name,subject,email,phone,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,el,pi,v,day1,day2,day1_time,day2_time,owner_user_id)
+            VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (name, subject, email, phone, int(bool(book_loaned)), int(bool(paper_ws)), math_goal, safe_int(math_worksheets_per_week), reading_goal, safe_int(reading_worksheets_per_week), int(bool(el)), int(bool(pi)), int(bool(v)), day1, day2, day1_time, day2_time, owner_user_id))
         student_id = c.lastrowid
         conn.commit()
     
@@ -109,7 +108,7 @@ def add_student(name, subject, email, phone, whatsapp="", book_loaned=0, paper_w
     return student_id
 
 
-def update_student(sid, name, email, phone, whatsapp="", subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
+def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=0, math_goal="", math_worksheets_per_week=0, reading_goal="", reading_worksheets_per_week=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1):
     """Update an existing student's information with ownership check.
     
     Args:
@@ -117,8 +116,8 @@ def update_student(sid, name, email, phone, whatsapp="", subject="", book_loaned
     """
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,whatsapp=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=? AND owner_user_id=?""",
-                  (name,subject,email,phone,whatsapp,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid,owner_user_id))
+        c.execute("""UPDATE students SET name=?,subject=?,email=?,phone=?,book_loaned=?,paper_ws=?,math_goal=?,math_ws_per_week=?,reading_goal=?,reading_ws_per_week=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=? AND owner_user_id=?""",
+                  (name,subject,email,phone,int(bool(book_loaned)),int(bool(paper_ws)),math_goal,safe_int(math_worksheets_per_week),reading_goal,safe_int(reading_worksheets_per_week),int(bool(el)),int(bool(pi)),int(bool(v)),day1,day2,day1_time,day2_time,sid,owner_user_id))
         conn.commit()
 
 
@@ -143,7 +142,7 @@ def get_deleted_students(owner_user_id=1):
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""
-            SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, s.whatsapp, s.active, s.book_loaned, s.paper_ws,
+            SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, '' AS legacy_contact, s.active, s.book_loaned, s.paper_ws,
                    s.math_goal, s.math_ws_per_week, s.reading_goal, s.reading_ws_per_week,
                    s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time
             FROM students s
@@ -191,7 +190,6 @@ def import_csv(file_path, owner_user_id=1):
             
             email=row.get("email") or ""
             phone=row.get("phone") or ""
-            whatsapp=row.get("WhatsApp") or row.get("whatsapp") or ""
             subject=row.get("subject") or ""
             math_goal=row.get("math_goal") or ""
             # Map CSV column Math/WS to database column math_ws_per_week
@@ -211,14 +209,14 @@ def import_csv(file_path, owner_user_id=1):
                 # UPDATE existing student - set all fields from CSV
                 student_id = student_record[0]
                 print(f"UPDATING student ID {student_id}: {name}")
-                conn.execute("""UPDATE students SET name=?, subject=?, email=?, phone=?, whatsapp=?, math_goal=?, math_ws_per_week=?, reading_goal=?, reading_ws_per_week=?, active=1 WHERE id=? AND owner_user_id=?"""
-                             ,(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws,student_id,owner_user_id))
+                conn.execute("""UPDATE students SET name=?, subject=?, email=?, phone=?, math_goal=?, math_ws_per_week=?, reading_goal=?, reading_ws_per_week=?, active=1 WHERE id=? AND owner_user_id=?"""
+                             ,(name,subject,email,phone,math_goal,math_ws,reading_goal,reading_ws,student_id,owner_user_id))
                 updated+=1
             else:
                 # INSERT new student with owner_user_id
                 print(f"INSERTING new student: {name}")
-                conn.execute("""INSERT INTO students(name,subject,email,phone,whatsapp,active,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,owner_user_id)
-                                VALUES(?,?,?,?,?,1,?,?,?,?,?)""",(name,subject,email,phone,whatsapp,math_goal,math_ws,reading_goal,reading_ws,owner_user_id))
+                conn.execute("""INSERT INTO students(name,subject,email,phone,active,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,owner_user_id)
+                                VALUES(?,?,?,?,1,?,?,?,?,?)""",(name,subject,email,phone,math_goal,math_ws,reading_goal,reading_ws,owner_user_id))
                 added+=1
         
         # PERMANENTLY delete students not in CSV (owned by this user only)
@@ -240,7 +238,7 @@ def export_csv(path, owner_user_id=1):
     """Export all active students to CSV with proper alignment of headers and data."""
     data=get_all_students(owner_user_id)
     # Headers must match the order of columns returned by get_all_students()
-    # get_all_students returns: id, name, subject, level, email, phone, whatsapp, active, 
+    # get_all_students returns: id, name, subject, level, email, phone, legacy_contact, active,
     # book_loaned, paper_ws, math_goal, math_ws_per_week, reading_goal, reading_ws_per_week,
     # el, pi, v, day1, day1_time, day2, day2_time
     headers=[
@@ -250,7 +248,6 @@ def export_csv(path, owner_user_id=1):
         "Level",
         "Email",
         "Phone",
-        "WhatsApp",
         "Active",
         "Book Loaned",
         "Paper Worksheets",
@@ -269,7 +266,7 @@ def export_csv(path, owner_user_id=1):
     with open(path,"w",newline="",encoding="utf-8") as f:
         writer=csv.writer(f)
         writer.writerow(headers)
-        writer.writerows(data)
+        writer.writerows([list(row[:6]) + list(row[7:]) for row in data])
 
 
 def find_duplicates_by_name(name, owner_user_id: int = 1):

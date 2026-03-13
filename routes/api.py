@@ -2,6 +2,8 @@
 from flask import jsonify, request
 from modules import student_manager, assistant_manager, timer_manager, auth_manager
 from modules import server_cache
+from modules.email_manager import get_email_manager
+from modules import instructor_profile_manager
 from modules.database import DB_PATH
 from modules.utils import duration_seconds, time_now
 from datetime import datetime
@@ -9,6 +11,15 @@ import sqlite3
 from routes.auth import require_login, require_admin
 
 # Global helper cache for performance (UI helpers)
+
+
+def _trace_column3(event: str, **fields) -> None:
+    """Lightweight terminal trace for checked-out column debugging."""
+    if fields:
+        details = " ".join(f"{key}={fields[key]!r}" for key in sorted(fields))
+        print(f"[column3-trace] {event} {details}")
+    else:
+        print(f"[column3-trace] {event}")
 
 
 def _students_list_cache_key(owner_user_id: int) -> str:
@@ -26,6 +37,124 @@ def _assistants_profile_cache_key(owner_user_id: int) -> str:
 def _assistants_duty_cache_key(owner_user_id: int) -> str:
     return f"{server_cache.ASSISTANTS_DUTY_LIST_CACHE_KEY}:u:{owner_user_id}"
 
+
+def _format_checkout_timestamp(value: str) -> str:
+    """Format ISO-ish timestamps for human-readable emails."""
+    if not value:
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+        return dt.strftime("%Y-%m-%d %I:%M:%S %p")
+    except Exception:
+        return str(value)
+
+
+def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user_id: int):
+    """Send checkout notification email to the student's email on file (best effort).
+
+    Mirrors the email_manager.send_email() pattern used by the utilities
+    Student Activity Card send-email route.
+
+    Returns a dict:
+      - status: sent | no_email | failed | error
+      - message: human-readable short message
+    """
+    import traceback as _tb
+
+    try:
+        if not student_row:
+            return {"status": "error", "message": "Student not found for checkout email"}
+
+        student_name = student_row[1] if len(student_row) > 1 else "Student"
+        recipient_email = (student_row[3] if len(student_row) > 3 else "") or ""
+        recipient_email = recipient_email.strip()
+
+        if not recipient_email or "@" not in recipient_email:
+            print(f"[checkout-email] Skipped for {student_name}: no valid email on file")
+            return {"status": "no_email", "message": "No email on file"}
+
+        start_display = _format_checkout_timestamp(start_time)
+        end_display = _format_checkout_timestamp(end_time)
+
+        try:
+            total_seconds = max(0, int(duration_seconds(start_time, end_time)))
+        except Exception:
+            total_seconds = 0
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        duration_display = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
+        center_name = (profile.get('center_location') if profile else None) or 'KumoClock'
+
+        email_subject = f"Class Checkout - {student_name}"
+
+        body = (
+            f"Dear Parent/Guardian,\n\n"
+            f"{student_name} has checked out from class.\n\n"
+            f"Start Time:       {start_display}\n"
+            f"End Time:         {end_display}\n"
+            f"Session Duration: {duration_display}\n\n"
+            f"Center: {center_name}\n\n"
+            f"This is an automated message. Please do not reply."
+        )
+
+        html_body = f"""
+<html>
+<head>
+  <style>
+    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+    .header {{ background-color: #0d6efd; color: white; padding: 20px; text-align: center; }}
+    .content {{ padding: 20px; }}
+    .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+    .report-table th, .report-table td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+    .report-table th {{ background-color: #e9ecef; font-weight: bold; width: 50%; }}
+    .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>Class Checkout Confirmation</h2>
+    <p>{center_name}</p>
+  </div>
+  <div class="content">
+    <p>Dear Parent/Guardian,</p>
+    <p><strong>{student_name}</strong> has checked out from class.</p>
+    <table class="report-table">
+      <tr><th>Start Time</th><td>{start_display}</td></tr>
+      <tr><th>End Time</th><td>{end_display}</td></tr>
+      <tr><th>Session Duration</th><td>{duration_display}</td></tr>
+    </table>
+    <div class="footer">
+      <p>This is an automated message from {center_name}. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+        # Use the same email_manager pattern as utilities/report-card/send-email
+        email_manager = get_email_manager()
+        result = email_manager.send_email(
+            recipient_email=recipient_email,
+            subject=email_subject,
+            body=body,
+            html_body=html_body,
+        )
+        if result.get('success', False):
+            print(f"[checkout-email] Sent to {recipient_email} for {student_name}")
+            return {"status": "sent", "message": "Checkout email sent"}
+        else:
+            failure_reason = result.get('error') or 'Unknown email error'
+            print(f"[checkout-email] Failed for {student_name}: {failure_reason}")
+            return {"status": "failed", "message": f"Checkout email failed: {failure_reason}"}
+
+    except Exception as e:
+        print(f"[checkout-email] Unexpected error for student: {e}\n{_tb.format_exc()}")
+        return {"status": "error", "message": f"Checkout email error: {e}"}
+
+
 def register_api_routes(app):
     """Register API/AJAX routes."""
     
@@ -34,6 +163,7 @@ def register_api_routes(app):
     def api_students_list():
         """Return students with computed status: registered | active | checked."""
         owner_user_id = auth_manager.get_current_user_id()
+        cache_key = _students_list_cache_key(owner_user_id)
 
         def _build_students_list_payload():
             students = student_manager.get_all_students(owner_user_id=owner_user_id)
@@ -80,7 +210,18 @@ def register_api_routes(app):
                     if sid not in latest_duration:
                         latest_duration[sid] = dur
 
+            _trace_column3(
+                "students_list_build_source",
+                owner_user_id=owner_user_id,
+                total_students=len(students),
+                active_rows=len(active_rows),
+                checked_rows=len(today_rows),
+                latest_rows=len(latest_rows),
+                today=today,
+            )
+
             result = []
+            checked_ids = []
             for s in students:
                 sid = s[0]
                 status = "registered"
@@ -94,6 +235,7 @@ def register_api_routes(app):
                 elif sid in today_sum:
                     status = "checked"
                     total_seconds = today_sum.get(sid, 0)
+                    checked_ids.append(sid)
 
                 student_dict = {
                     "id": sid,
@@ -115,12 +257,29 @@ def register_api_routes(app):
                     "duration": dur,
                 }
                 result.append(student_dict)
+
+            _trace_column3(
+                "students_list_payload_built",
+                owner_user_id=owner_user_id,
+                cache_key=cache_key,
+                checked_ids=checked_ids,
+                checked_count=len(checked_ids),
+            )
             return result
 
         result = server_cache.get_or_set(
-            _students_list_cache_key(owner_user_id),
+            cache_key,
             _build_students_list_payload,
             policy="checkin",
+        )
+
+        checked_count = sum(1 for student in result if student.get("status") == "checked")
+        _trace_column3(
+            "students_list_response",
+            owner_user_id=owner_user_id,
+            cache_key=cache_key,
+            total=len(result),
+            checked_count=checked_count,
         )
 
         return jsonify(result)
@@ -177,6 +336,9 @@ def register_api_routes(app):
         student = student_manager.get_student(sid, owner_user_id=owner_user_id)
         if not student:
             return jsonify({"error": "Student not found"}), 404
+        _trace_column3("checkout_begin", owner_user_id=owner_user_id, sid=sid, student_name=student[1])
+        checkout_email_status = None
+        checkout_email_message = None
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             open_row = c.execute(
@@ -203,9 +365,46 @@ def register_api_routes(app):
                     (end, duration, sess_id),
                 )
                 conn.commit()
-                timer_manager.active_sessions.pop(sid, None)
-        server_cache.invalidate(_students_list_cache_key(owner_user_id))
-        return jsonify({"status": "stopped"})
+                _trace_column3(
+                    "checkout_db_updated",
+                    owner_user_id=owner_user_id,
+                    sid=sid,
+                    sess_id=sess_id,
+                    duration=duration,
+                    start=start,
+                    end=end,
+                )
+                email_result = _send_checkout_email(student, start, end, owner_user_id) or {}
+                checkout_email_status = email_result.get("status")
+                checkout_email_message = email_result.get("message")
+        cache_key = _students_list_cache_key(owner_user_id)
+        server_cache.invalidate(cache_key)
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            today = datetime.now().date().isoformat()
+            checked_total = c.execute(
+                """
+                SELECT COUNT(DISTINCT student_id)
+                FROM sessions
+                WHERE DATE(start_time)=?
+                  AND end_time IS NOT NULL
+                  AND owner_user_id = ?
+                """,
+                (today, owner_user_id),
+            ).fetchone()[0] or 0
+        _trace_column3(
+            "checkout_complete",
+            owner_user_id=owner_user_id,
+            sid=sid,
+            cache_key=cache_key,
+            checkout_email_status=checkout_email_status,
+            checked_total=checked_total,
+        )
+        return jsonify({
+            "status": "stopped",
+            "checkout_email_status": checkout_email_status,
+            "checkout_email_message": checkout_email_message,
+        })
 
     @app.route("/api/sessions/active")
     @require_login
@@ -255,7 +454,14 @@ def register_api_routes(app):
                             (end, duration, sid, owner_user_id),
                         )
                         conn.commit()
-                    timer_manager.active_sessions.pop(sid, None)
+                    _trace_column3(
+                        "active_session_auto_closed",
+                        owner_user_id=owner_user_id,
+                        sid=sid,
+                        duration=duration,
+                        start=start,
+                        end=end,
+                    )
             except Exception:
                 continue
 
@@ -329,20 +535,6 @@ def register_api_routes(app):
                 return jsonify({"error": "Student not found"}), 404
             
             student_name = student[1]  # name is at index 1
-            # Get goals from student tuple: indices after removal of 'photo' field
-            # Tuple: (id, name, subject, email, phone, active, book_loaned, paper_ws, math_goal, math_worksheets_per_week, reading_goal, reading_worksheets_per_week)
-            math_goal = student[8] if len(student) > 8 else None
-            reading_goal = student[10] if len(student) > 10 else None
-            
-            # Check if student has goals (both goals cannot be blank)
-            # A goal is "filled" if it's not None and has non-whitespace text
-            math_filled = bool(math_goal and str(math_goal).strip())
-            reading_filled = bool(reading_goal and str(reading_goal).strip())
-            
-            if not (math_filled or reading_filled):
-                return jsonify({
-                    "error": f"⚠️ {student_name} cannot start a session. Math Goal and Reading Goal are both blank. Please set at least one goal (Math or Reading)."
-                }), 400
             
             # Check if student has an open session
             with sqlite3.connect(DB_PATH) as conn:
@@ -354,6 +546,8 @@ def register_api_routes(app):
             
             if open_session:
                 # Stop the session (check out)
+                checkout_email_status = None
+                checkout_email_message = None
                 with sqlite3.connect(DB_PATH) as conn:
                     c = conn.cursor()
                     open_row = c.execute(
@@ -380,13 +574,49 @@ def register_api_routes(app):
                             (end, duration, sess_id),
                         )
                         conn.commit()
-                server_cache.invalidate(_students_list_cache_key(owner_user_id))
+                        _trace_column3(
+                            "toggle_checkout_db_updated",
+                            owner_user_id=owner_user_id,
+                            student_id=student_id,
+                            sess_id=sess_id,
+                            duration=duration,
+                            start=start,
+                            end=end,
+                        )
+                        email_result = _send_checkout_email(student, start, end, owner_user_id) or {}
+                        checkout_email_status = email_result.get("status")
+                        checkout_email_message = email_result.get("message")
+                cache_key = _students_list_cache_key(owner_user_id)
+                server_cache.invalidate(cache_key)
+                _trace_column3(
+                    "toggle_checkout_complete",
+                    owner_user_id=owner_user_id,
+                    student_id=student_id,
+                    cache_key=cache_key,
+                    checkout_email_status=checkout_email_status,
+                )
                 return jsonify({
                     "action": "checked_out",
                     "student_id": student_id,
-                    "name": student_name
+                    "name": student_name,
+                    "checkout_email_status": checkout_email_status,
+                    "checkout_email_message": checkout_email_message,
                 }), 200
             else:
+                # Validate goals only when STARTING a new session.
+                # get_student tuple:
+                # (id,name,subject,email,phone,legacy_contact,active,book_loaned,paper_ws,math_goal,math_ws_per_week,reading_goal,reading_ws_per_week,...)
+                math_goal = student[9] if len(student) > 9 else None
+                reading_goal = student[11] if len(student) > 11 else None
+
+                math_filled = bool(math_goal and str(math_goal).strip())
+                reading_filled = bool(reading_goal and str(reading_goal).strip())
+
+                if not (math_filled or reading_filled):
+                    return jsonify({
+                        "error": f"⚠️ {student_name} cannot start a session. Math Goal and Reading Goal are both blank. Please set at least one goal (Math or Reading)."
+                    }), 400
+
                 # Start a new session
                 timer_manager.start_session(student_id, owner_user_id)
                 server_cache.invalidate(_students_list_cache_key(owner_user_id))
@@ -533,7 +763,6 @@ def register_api_routes(app):
                     (now.isoformat(), duration, sess_id)
                 )
                 conn.commit()
-                server_cache.invalidate(_assistants_duty_cache_key(owner_user_id))
                 return jsonify({"success": True, "on_duty": False, "duration": duration})
             else:
                 # Start new open session

@@ -23,7 +23,6 @@ def init_db():
             paper_ws INTEGER DEFAULT 0,
             email TEXT,
             phone TEXT,
-            whatsapp TEXT DEFAULT '',
             active INTEGER DEFAULT 1,
             math_goal TEXT DEFAULT '',
             math_ws_per_week INTEGER DEFAULT 0,
@@ -48,7 +47,6 @@ def init_db():
             role TEXT,
             email TEXT,
             phone TEXT,
-            whatsapp TEXT DEFAULT '',
             owner_user_id INTEGER NOT NULL DEFAULT 1
         )
     """)
@@ -186,8 +184,6 @@ def init_db():
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(students)")
         cols = [r[1] for r in cur.fetchall()]
-        if "whatsapp" not in cols:
-            cur.execute("ALTER TABLE students ADD COLUMN whatsapp TEXT")
         if "math_goal" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN math_goal TEXT")
         if "math_worksheets_per_week" not in cols:
@@ -219,13 +215,11 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
-    # Ensure `whatsapp` column exists on staff table (migration for WhatsApp contact)
+    # Ensure required columns exist on staff table
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(staff)")
         cols = [r[1] for r in cur.fetchall()]
-        if "whatsapp" not in cols:
-            cur.execute("ALTER TABLE staff ADD COLUMN whatsapp TEXT")
         if "owner_user_id" not in cols:
             cur.execute("ALTER TABLE staff ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()

@@ -38,7 +38,31 @@
   /* Auto-inject CSRF token into every non-GET fetch() call */
   (function () {
     var _origFetch = window.fetch;
-    window.fetch = function (url, opts) {
+    async function _refreshCsrfToken() {
+      try {
+        var res = await _origFetch.call(window, '/api/csrf-token', {
+          method: 'GET',
+          cache: 'no-store'
+        });
+        if (!res.ok) return null;
+        var data = await res.json();
+        var token = data && data.csrf_token;
+        if (!token) return null;
+
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        if (!meta) {
+          meta = document.createElement('meta');
+          meta.setAttribute('name', 'csrf-token');
+          document.head.appendChild(meta);
+        }
+        meta.setAttribute('content', token);
+        return token;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    window.fetch = async function (url, opts) {
       opts = opts || {};
       var method = (opts.method || 'GET').toUpperCase();
       if (method !== 'GET' && method !== 'HEAD') {
@@ -48,7 +72,27 @@
           opts.headers['X-CSRFToken'] = meta.getAttribute('content');
         }
       }
-      return _origFetch.call(this, url, opts);
+
+      var response = await _origFetch.call(this, url, opts);
+
+      // Retry once for CSRF-related failures (common after long-open tabs)
+      if (method !== 'GET' && method !== 'HEAD' && response && response.status === 400) {
+        try {
+          var bodyText = await response.clone().text();
+          if (/csrf/i.test(bodyText || '')) {
+            var refreshed = await _refreshCsrfToken();
+            if (refreshed) {
+              opts.headers = opts.headers || {};
+              opts.headers['X-CSRFToken'] = refreshed;
+              response = await _origFetch.call(this, url, opts);
+            }
+          }
+        } catch (e) {
+          // no-op: return original response below
+        }
+      }
+
+      return response;
     };
   })();
 </script>

@@ -14,13 +14,15 @@ import secrets
 import sys
 import shutil
 from dotenv import load_dotenv
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+import logging
 
 # Load environment variables from .env file
 load_dotenv()
 
 from modules.database import init_db, DB_PATH
 from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager
+from modules import server_cache
 from modules.utils import format_hhmm
 from modules.rate_limiter import limiter
 
@@ -57,6 +59,15 @@ limiter.init_app(app)
 
 # Cleanup old payroll data (18 month retention policy)
 assistant_manager.cleanup_old_payroll_data(months=18)
+
+# Enable cache traces in the terminal for dashboard/column-3 debugging.
+server_cache.DEBUG_CACHE = True
+server_cache._logger.setLevel(logging.DEBUG)
+if not server_cache._logger.handlers:
+    _cache_handler = logging.StreamHandler()
+    _cache_handler.setFormatter(logging.Formatter('%(message)s'))
+    server_cache._logger.addHandler(_cache_handler)
+server_cache._logger.propagate = False
 
 # ================================================================
 #  Request Profiling - Track reads and writes
@@ -300,7 +311,6 @@ from routes.qr import register_qr_routes
 from routes.reports import register_reports_routes
 from routes.books import register_book_routes
 from routes.instructor_profile import register_instructor_profile_routes
-from routes.whatsapp import register_whatsapp_routes
 
 # Register scanner route
 @app.route('/qr/scanner')
@@ -310,6 +320,12 @@ def qr_scanner():
     Name:Kennedy D.
     page for hardware barcode scanner."""
     return render_template('qr_scanner.html')
+
+
+@app.route('/api/csrf-token')
+def api_csrf_token():
+    """Return a fresh CSRF token for AJAX retry flows."""
+    return jsonify({'csrf_token': generate_csrf()})
 
 # Register auth routes FIRST (needed for login)
 register_auth_routes(app)
@@ -322,7 +338,6 @@ register_api_routes(app)
 register_qr_routes(app)
 register_reports_routes(app)
 register_book_routes(app)
-register_whatsapp_routes(app)
 
 # Register utilities routes
 from routes.utilities import register_utilities_routes

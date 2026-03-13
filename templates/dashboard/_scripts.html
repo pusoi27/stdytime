@@ -313,8 +313,23 @@ function buildSeatGrid(activeSessions){
         </div>`;
       card.onclick=async()=>{
         if(confirm("Stop session for "+s.name+"?")){
-          await fetch(`/api/students/stop/${s.id}`,{method:'POST'});
-          fetchDashboardData();
+          try {
+            const res = await fetch(`/api/students/stop/${s.id}`,{method:'POST'});
+            const j = await res.json().catch(()=>({}));
+            if(!res.ok){
+              showQuickToast(j.error || 'Failed to stop session', true);
+            } else if(j && j.checkout_email_status === 'sent'){
+              showQuickToast('Checkout email sent');
+            } else if(j && j.checkout_email_status === 'no_email'){
+              showQuickToast('No email on file', true);
+            } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
+              showQuickToast(j.checkout_email_message || 'Checkout email failed', true);
+            }
+          } catch(err){
+            showQuickToast('Failed to stop session', true);
+          } finally {
+            fetchDashboardData();
+          }
         }
       };
       col.appendChild(card); grid.appendChild(col);
@@ -355,8 +370,23 @@ function buildSeatGrid(activeSessions){
       badge.style.cursor = 'pointer';
       badge.onclick = async() => {
         if(confirm(`Stop session for ${s.name}?`)){
-          await fetch(`/api/students/stop/${s.id}`, {method:'POST'});
-          fetchDashboardData();
+          try {
+            const res = await fetch(`/api/students/stop/${s.id}`, {method:'POST'});
+            const j = await res.json().catch(()=>({}));
+            if(!res.ok){
+              showQuickToast(j.error || 'Failed to stop session', true);
+            } else if(j && j.checkout_email_status === 'sent'){
+              showQuickToast('Checkout email sent');
+            } else if(j && j.checkout_email_status === 'no_email'){
+              showQuickToast('No email on file', true);
+            } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
+              showQuickToast(j.checkout_email_message || 'Checkout email failed', true);
+            }
+          } catch(err){
+            showQuickToast('Failed to stop session', true);
+          } finally {
+            fetchDashboardData();
+          }
         }
       };
       overflowList.appendChild(badge);
@@ -718,6 +748,15 @@ resetIdleTimer();
       } else {
         const action = (j && j.action) ? (j.action==='started'?'Started':'Checked Out') : 'Updated';
         showQuickToast(`${j.name||('Student '+ident)} — ${action}`);
+        if(j && j.action === 'checked_out'){
+          if(j.checkout_email_status === 'sent'){
+            showQuickToast('Checkout email sent');
+          } else if(j.checkout_email_status === 'no_email'){
+            showQuickToast('No email on file', true);
+          } else if(j.checkout_email_status === 'failed' || j.checkout_email_status === 'error'){
+            showQuickToast(j.checkout_email_message || 'Checkout email failed', true);
+          }
+        }
         logDebug(`TOGGLE OK id=${ident} action=${action}`);
       }
       fetchDashboardData();

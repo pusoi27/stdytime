@@ -97,10 +97,22 @@ class EmailManager:
                             message.attach(part)
             
             # Connect to server and send
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()  # Secure the connection
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(message)
+            try:
+                with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                    server.starttls()  # Secure the connection
+                    server.login(self.sender_email, self.sender_password)
+                    server.send_message(message)
+            except smtplib.SMTPAuthenticationError:
+                # Common issue: Gmail app passwords are often copied with spaces for readability.
+                # Retry once with internal spaces removed.
+                compact_password = (self.sender_password or '').replace(' ', '')
+                if compact_password and compact_password != self.sender_password:
+                    with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                        server.starttls()
+                        server.login(self.sender_email, compact_password)
+                        server.send_message(message)
+                else:
+                    raise
             
             return {
                 'success': True,
@@ -110,7 +122,7 @@ class EmailManager:
         except smtplib.SMTPAuthenticationError:
             return {
                 'success': False,
-                'error': 'Authentication failed. Please check email credentials.'
+                'error': 'Authentication failed. Please check SENDER_EMAIL/SENDER_PASSWORD (for Gmail app password, try without spaces).'
             }
         except smtplib.SMTPException as e:
             return {
