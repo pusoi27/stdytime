@@ -43,12 +43,14 @@
                             <button class="btn btn-outline-dark btn-lg" onclick="printStudentActivityCardPDF()" id="pdfButton" disabled>
                                 <i class="bi bi-printer"></i> Print to PDF
                             </button>
+                            {% if subscription_access.can_send_email %}
                             <button class="btn btn-success btn-lg" onclick="openEmailModal()" id="emailButton" disabled>
                                 <i class="bi bi-envelope-fill"></i> Email Report
                             </button>
                             <button class="btn btn-outline-primary btn-lg" onclick="emailAllStudents()" id="emailAllButton" disabled>
                                 <i class="bi bi-send-fill"></i> Email All Students
                             </button>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -450,10 +452,10 @@ function updateSelectedStudent() {
     const pdfButton = document.getElementById('pdfButton');
     
     if (select.value) {
-        emailButton.disabled = false;
+        if (emailButton) emailButton.disabled = false;
         if (pdfButton) pdfButton.disabled = false;
     } else {
-        emailButton.disabled = true;
+        if (emailButton) emailButton.disabled = true;
         if (pdfButton) pdfButton.disabled = true;
     }
 }

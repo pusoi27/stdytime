@@ -117,6 +117,19 @@ def init_db():
         )
     """)
 
+    # Assistant Schedule (day-based scheduling for center operations)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS assistant_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assistant_id INTEGER NOT NULL,
+            scheduled_date TEXT NOT NULL,
+            owner_user_id INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(assistant_id) REFERENCES staff(id),
+            UNIQUE(assistant_id, scheduled_date, owner_user_id)
+        )
+    """)
+
     # Users (Identity & Authentication)
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -124,6 +137,7 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'instructor',
+            subscription_tier TEXT DEFAULT 'tier3',
             is_active INTEGER DEFAULT 1,
             must_change_password INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -132,6 +146,12 @@ def init_db():
     """)
 
     conn.commit()
+
+    c.execute("PRAGMA table_info(users)")
+    user_cols = [r[1] for r in c.fetchall()]
+    if "subscription_tier" not in user_cols:
+        c.execute("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'tier3'")
+        conn.commit()
 
     # Sample data
     if not c.execute("SELECT COUNT(*) FROM students").fetchone()[0]:
@@ -169,14 +189,14 @@ def init_db():
     if existing_super_admin:
         c.execute("""
             UPDATE users
-            SET password_hash = ?, role = 'admin', is_active = 1, must_change_password = 0, updated_at = ?
+            SET password_hash = ?, role = 'admin', subscription_tier = 'tier3', is_active = 1, must_change_password = 0, updated_at = ?
             WHERE email = ?
         """, (super_admin_password_hash, now, super_admin_email))
     else:
         c.execute("""
-            INSERT INTO users (email, password_hash, role, is_active, must_change_password, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (super_admin_email, super_admin_password_hash, "admin", 1, 0, now, now))
+            INSERT INTO users (email, password_hash, role, subscription_tier, is_active, must_change_password, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (super_admin_email, super_admin_password_hash, "admin", "tier3", 1, 0, now, now))
     conn.commit(); conn.close()
 
     # Ensure additional columns exist on students table (migration for additional fields)
@@ -215,13 +235,15 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
-    # Ensure required columns exist on staff table
+    # Ensure required columns exist on staff table; drop orphaned columns
     with sqlite3.connect(DB_PATH) as conn:
         cur = conn.cursor()
         cur.execute("PRAGMA table_info(staff)")
         cols = [r[1] for r in cur.fetchall()]
         if "owner_user_id" not in cols:
             cur.execute("ALTER TABLE staff ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
+        if "whatsapp" in cols:
+            cur.execute("ALTER TABLE staff DROP COLUMN whatsapp")
         conn.commit()
 
     # Ensure new book columns exist (migration for book inventory management)
@@ -250,6 +272,11 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "must_change_password" not in cols:
             cur.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+        if "subscription_tier" not in cols:
+            cur.execute("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'tier3'")
+        cur.execute(
+            "UPDATE users SET subscription_tier = 'tier3' WHERE subscription_tier IS NULL OR TRIM(subscription_tier) = ''"
+        )
         conn.commit()
 
     # Ensure owner_user_id exists on sessions and assistant_sessions
@@ -263,6 +290,15 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "owner_user_id" not in cols:
             cur.execute("ALTER TABLE assistant_sessions ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+
+    # Ensure assistant_schedule table exists
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(assistant_schedule)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "owner_user_id" not in cols and cols:
+            cur.execute("ALTER TABLE assistant_schedule ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     # Ensure instructor_profile has center_hours column (migration for center operating hours)

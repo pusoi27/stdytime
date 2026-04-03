@@ -42,6 +42,45 @@ def require_admin(f):
     return decorated_function
 
 
+def _feature_denied_response(feature):
+    message = auth_manager.get_feature_denied_message(feature)
+    if request.path.startswith('/api/'):
+        return jsonify({'error': message, 'feature': feature}), 403
+
+    flash(message, 'warning')
+
+    user = auth_manager.get_user_by_id(session['user_id']) if 'user_id' in session else None
+    fallback_endpoint = 'students_list'
+    if user and user.has_feature(auth_manager.FEATURE_KUMOCLASS):
+        fallback_endpoint = 'dashboard'
+    elif user and user.has_feature(auth_manager.FEATURE_INSTRUCTOR_PROFILE):
+        fallback_endpoint = 'instructor_profile'
+    return redirect(url_for(fallback_endpoint))
+
+
+def require_feature(feature):
+    """Decorator to require subscription tier access to a feature."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Please log in to access this page.', 'warning')
+                return redirect(url_for('auth.login', next=request.url))
+
+            user = auth_manager.get_user_by_id(session['user_id'])
+            if not user:
+                session.clear()
+                flash('Please log in to continue.', 'warning')
+                return redirect(url_for('auth.login'))
+
+            if not user.has_feature(feature):
+                return _feature_denied_response(feature)
+
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 @limiter.limit("10 per minute", error_message="Too many login attempts. Please wait a minute and try again.")
 def login():
@@ -68,6 +107,7 @@ def login():
             session['user_id'] = user.id
             session['email'] = user.email
             session['role'] = user.role
+            session['subscription_tier'] = user.subscription_tier
             session.permanent = True  # Session persists across browser restarts
             
             if user.must_change_password:
@@ -139,6 +179,7 @@ def register():
         password = request.form.get('password', '')
         password_confirm = request.form.get('password_confirm', '')
         role = request.form.get('role', 'instructor').strip().lower()
+        subscription_tier = request.form.get('subscription_tier', auth_manager.TIER_1).strip().lower()
 
         # Public registration defaults to non-admin roles.
         # Admins can still create admin users when logged in.
@@ -146,38 +187,47 @@ def register():
             role = auth_manager.ROLE_INSTRUCTOR
         if role == auth_manager.ROLE_ADMIN and session.get('role') != auth_manager.ROLE_ADMIN:
             role = auth_manager.ROLE_INSTRUCTOR
+        if session.get('role') != auth_manager.ROLE_ADMIN:
+            subscription_tier = auth_manager.TIER_1
+        else:
+            subscription_tier = auth_manager.normalize_subscription_tier(subscription_tier)
         
         # Validate inputs
         if not email or not password:
             flash('Email and password are required.', 'danger')
-            return render_template('auth/register.html', email=email, role=role)
+            return render_template('auth/register.html', email=email, role=role, subscription_tier=subscription_tier, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
         
         if len(email) < 5 or '@' not in email:
             flash('Please enter a valid email address.', 'danger')
-            return render_template('auth/register.html', email=email, role=role)
+            return render_template('auth/register.html', email=email, role=role, subscription_tier=subscription_tier, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
         
         if password != password_confirm:
             flash('Passwords do not match.', 'danger')
-            return render_template('auth/register.html', email=email, role=role)
+            return render_template('auth/register.html', email=email, role=role, subscription_tier=subscription_tier, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
         
         if len(password) < 8:
             flash('Password must be at least 8 characters.', 'danger')
-            return render_template('auth/register.html', email=email, role=role)
+            return render_template('auth/register.html', email=email, role=role, subscription_tier=subscription_tier, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
         
         # Register user
-        success, user_id_or_error = auth_manager.register_user(email, password, role=role)
+        success, user_id_or_error = auth_manager.register_user(
+            email,
+            password,
+            role=role,
+            subscription_tier=subscription_tier,
+        )
         
         if success:
             init_ok, init_msg = auth_manager.initialize_new_user_data(user_id_or_error)
             if not init_ok:
                 flash(f'Account created for {email}, but starter data setup had an issue: {init_msg}', 'warning')
-            flash(f'User {email} registered successfully with role "{role}".', 'success')
+            flash(f'User {email} registered successfully with role "{role}" and tier "{subscription_tier}".', 'success')
             return redirect(url_for('auth.login'))
         else:
             flash(f'Registration failed: {user_id_or_error}', 'danger')
-            return render_template('auth/register.html', email=email, role=role)
+            return render_template('auth/register.html', email=email, role=role, subscription_tier=subscription_tier, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
     
-    return render_template('auth/register.html')
+    return render_template('auth/register.html', subscription_tier=auth_manager.TIER_1, subscription_tiers=auth_manager.VALID_SUBSCRIPTION_TIERS)
 
 
 @auth_bp.route('/users', methods=['GET'])
@@ -205,6 +255,23 @@ def deactivate_user(user_id):
     else:
         flash(f'Failed to deactivate user: {message}', 'danger')
     
+    return redirect(url_for('auth.list_users'))
+
+
+@auth_bp.route('/user/<int:user_id>/subscription-tier', methods=['POST'])
+@require_admin
+def update_subscription_tier(user_id):
+    """Admin action: Update a user's subscription tier."""
+    if user_id == session.get('user_id'):
+        flash('You cannot change your own subscription tier from this screen.', 'warning')
+        return redirect(url_for('auth.list_users'))
+
+    subscription_tier = request.form.get('subscription_tier', auth_manager.TIER_1)
+    success, message = auth_manager.update_user_subscription_tier(user_id, subscription_tier)
+    if success:
+        flash(message, 'success')
+    else:
+        flash(message, 'danger')
     return redirect(url_for('auth.list_users'))
 
 

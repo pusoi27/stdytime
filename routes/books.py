@@ -19,7 +19,7 @@ from modules.book_manager import (
 )
 from modules.student_manager import get_student
 from modules import server_cache, db_backup_recovery, auth_manager
-from routes.auth import require_login, require_admin
+from routes.auth import require_login, require_admin, require_feature
 from routes.operation_utils import invalidate_scoped_cache, json_scoped_failure
 import sqlite3
 from modules.database import DB_PATH
@@ -77,11 +77,13 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/books/add")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def books_add():
         return render_template("book_add.html", edit_book_id=None)
 
     @app.route("/books/edit/<int:book_id>")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def books_edit(book_id: int):
         owner_user_id = auth_manager.get_current_user_id()
         book = get_book(book_id, owner_user_id=owner_user_id)
@@ -92,6 +94,7 @@ def register_book_routes(app):
     
     @app.route("/books")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def books_list():
         """Display all books in the library."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -140,6 +143,7 @@ def register_book_routes(app):
     
     @app.route("/api/books/catalog")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_catalog():
         """Return full book catalog details with slower cache lane."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -159,6 +163,7 @@ def register_book_routes(app):
 
     @app.route("/api/books/search")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_search():
         """API endpoint to search/filter books."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -202,6 +207,7 @@ def register_book_routes(app):
     
     @app.route("/api/books/levels")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_levels():
         """Get all unique reading levels."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -217,6 +223,7 @@ def register_book_routes(app):
 
     @app.route("/books/loan")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def books_loan_page():
         from datetime import datetime
         owner_user_id = auth_manager.get_current_user_id()
@@ -315,6 +322,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/isbn_lookup")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_isbn_lookup():
         owner_user_id = auth_manager.get_current_user_id()
         isbn_raw = (request.args.get('isbn') or '').strip()
@@ -356,6 +364,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/save", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_save():
         owner_user_id = auth_manager.get_current_user_id()
         payload = request.get_json(silent=True) or {}
@@ -426,6 +435,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/increase_copies", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_increase_copies():
         """Increase the number of copies for an existing book."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -457,6 +467,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/loan", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_loan():
         owner_user_id = auth_manager.get_current_user_id()
         payload = request.get_json(silent=True) or {}
@@ -517,6 +528,7 @@ def register_book_routes(app):
 
     @app.route("/api/books/clear-loan", methods=["POST"])
     @require_admin
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_clear_loan():
         """Clear an active loan directly from the loaned books table."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -544,6 +556,7 @@ def register_book_routes(app):
 
     @app.route("/api/books/return", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_return():
         owner_user_id = auth_manager.get_current_user_id()
         payload = request.get_json(silent=True) or {}
@@ -567,6 +580,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/sync-student-status", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_sync_student_status():
         """Sync all students' book_loaned flag based on current book loans."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -592,6 +606,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/api/books/<int:book_id>")
     @require_login
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def api_books_get(book_id: int):
         owner_user_id = auth_manager.get_current_user_id()
         try:
@@ -624,6 +639,7 @@ def register_book_routes(app):
     # ----------------------------------------
     @app.route("/books/delete/<int:book_id>", methods=["POST"])
     @require_admin
+    @require_feature(auth_manager.FEATURE_BOOKS)
     def books_delete(book_id: int):
         owner_user_id = auth_manager.get_current_user_id()
         try:

@@ -65,6 +65,22 @@
                             {% endif %}
                         </div>
 
+                        <div class="mb-3">
+                            <label for="subscription_tier" class="form-label">Subscription Tier</label>
+                            {% if user_session and user_session.get('role') == 'admin' %}
+                            <select class="form-control" id="subscription_tier" name="subscription_tier">
+                                {% for tier_value in subscription_tiers %}
+                                <option value="{{ tier_value }}" {% if subscription_tier == tier_value %}selected{% endif %}>{{ tier_value|upper }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">Admins can assign the feature tier during registration.</small>
+                            {% else %}
+                            <input type="hidden" name="subscription_tier" value="tier1">
+                            <input type="text" class="form-control" value="TIER1" disabled>
+                            <small class="form-text text-muted">Public registration defaults to Tier 1.</small>
+                            {% endif %}
+                        </div>
+
                         <div class="d-grid gap-2">
                             <button type="submit" class="btn btn-primary">Register User</button>
                         </div>

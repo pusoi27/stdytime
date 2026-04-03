@@ -9,7 +9,7 @@ from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 from modules import reports, student_manager, book_manager, auth_manager
 from modules.database import DB_PATH
-from routes.auth import require_login
+from routes.auth import require_login, require_feature
 
 def register_reports_routes(app):
     """Register reports routes (assistant hours and attendance)."""
@@ -20,6 +20,7 @@ def register_reports_routes(app):
     
     @app.route('/reports/assistants')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants():
         """Display assistant hours report page with date range selection."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -84,6 +85,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/assistants/pdf')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants_pdf():
         """Generate PDF of assistant hours report with date range."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -147,6 +149,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/assistants/csv')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants_csv():
         """Generate CSV of assistant duty log with date range."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -196,6 +199,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/class-attendance')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def class_attendance_page():
         """HTML page: Class attendance with date pickers and Print to PDF."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -267,6 +271,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/class-attendance/pdf')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def class_attendance_pdf():
         """Generate PDF: Class attendance by date with active student list."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -372,6 +377,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/student-attendance')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def student_attendance_page():
         """HTML page: Student attendance with student picker, date range, and report table."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -447,6 +453,7 @@ def register_reports_routes(app):
 
     @app.route('/reports/student-attendance/pdf')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def student_attendance_pdf():
         """Generate PDF: Student session history with durations in HH:MM format."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -536,6 +543,7 @@ def register_reports_routes(app):
     
     @app.route('/reports/loaned-books')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def loaned_books_report():
         """Display report of all currently loaned books."""
         owner_user_id = auth_manager.get_current_user_id()

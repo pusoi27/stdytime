@@ -319,7 +319,9 @@ function buildSeatGrid(activeSessions){
             if(!res.ok){
               showQuickToast(j.error || 'Failed to stop session', true);
             } else if(j && j.checkout_email_status === 'sent'){
-              showQuickToast('Checkout email sent');
+              showCheckoutEmailConfirmation(s.name);
+            } else if(j && j.checkout_email_status === 'disabled'){
+              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
             } else if(j && j.checkout_email_status === 'no_email'){
               showQuickToast('No email on file', true);
             } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
@@ -376,7 +378,9 @@ function buildSeatGrid(activeSessions){
             if(!res.ok){
               showQuickToast(j.error || 'Failed to stop session', true);
             } else if(j && j.checkout_email_status === 'sent'){
-              showQuickToast('Checkout email sent');
+              showCheckoutEmailConfirmation(s.name);
+            } else if(j && j.checkout_email_status === 'disabled'){
+              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
             } else if(j && j.checkout_email_status === 'no_email'){
               showQuickToast('No email on file', true);
             } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
@@ -750,7 +754,9 @@ resetIdleTimer();
         showQuickToast(`${j.name||('Student '+ident)} — ${action}`);
         if(j && j.action === 'checked_out'){
           if(j.checkout_email_status === 'sent'){
-            showQuickToast('Checkout email sent');
+            showCheckoutEmailConfirmation(j.name || ('Student ' + ident));
+          } else if(j.checkout_email_status === 'disabled'){
+            showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
           } else if(j.checkout_email_status === 'no_email'){
             showQuickToast('No email on file', true);
           } else if(j.checkout_email_status === 'failed' || j.checkout_email_status === 'error'){
@@ -841,6 +847,42 @@ resetIdleTimer();
     }
     el.innerHTML = `<div class="alert ${isError?'alert-danger':'alert-success'} shadow-sm py-2 px-3 mb-0">${msg}</div>`;
     setTimeout(()=>{ if(el) el.innerHTML=''; }, 2500);
+  }
+
+  function showCheckoutEmailConfirmation(studentName){
+    let backdrop = document.getElementById('checkoutEmailConfirmBackdrop');
+    if(!backdrop){
+      backdrop = document.createElement('div');
+      backdrop.id = 'checkoutEmailConfirmBackdrop';
+      backdrop.style.position = 'fixed';
+      backdrop.style.inset = '0';
+      backdrop.style.background = 'rgba(0, 0, 0, 0.35)';
+      backdrop.style.display = 'flex';
+      backdrop.style.alignItems = 'center';
+      backdrop.style.justifyContent = 'center';
+      backdrop.style.zIndex = '2200';
+      document.body.appendChild(backdrop);
+    }
+
+    const safeName = studentName || 'Student';
+    backdrop.innerHTML = `
+      <div class="card shadow-lg border-0" style="max-width:460px; width:92%; border-radius:14px; overflow:hidden;">
+        <div class="card-body text-center py-4 px-3">
+          <div class="mb-2" style="font-size:2.2rem;">✅</div>
+          <h5 class="mb-2">Checkout Confirmed</h5>
+          <p class="mb-1"><strong>${safeName}</strong> has been checked out.</p>
+          <p class="mb-0 text-success fw-semibold">Email sent successfully.</p>
+        </div>
+      </div>
+    `;
+
+    backdrop.style.display = 'flex';
+    setTimeout(() => {
+      const currentBackdrop = document.getElementById('checkoutEmailConfirmBackdrop');
+      if(currentBackdrop){
+        currentBackdrop.style.display = 'none';
+      }
+    }, 2000);
   }
 
   // Attach global keydown listener on dashboard

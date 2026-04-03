@@ -31,7 +31,7 @@ from modules.utils import format_hhmm
 from modules.email_manager import get_email_manager
 from modules import instructor_profile_manager, auth_manager
 from modules.award_rules_engine import get_worksheets_per_day, normalize_level
-from routes.auth import require_login
+from routes.auth import require_login, require_feature
 
 # Temporary storage directory for report-card file data to avoid bloating session cookies
 TEMP_REPORTCARD_DIR = Path('data') / 'tmp_reportcard'
@@ -802,6 +802,7 @@ def register_utilities_routes(app):
     
     @app.route('/api/utilities/report-card/send-email', methods=['POST'])
     @require_login
+    @require_feature(auth_manager.FEATURE_UTILITIES_EMAIL)
     def api_send_report_email():
         """Send student activity card via email"""
         try:

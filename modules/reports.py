@@ -50,6 +50,7 @@ def get_student_attendance_summary(days=30, owner_user_id=1):
 
 # --- Assistant hours summary for last N days ---
 def get_assistant_hours_summary(days=30, owner_user_id=1):
+    days = int(days)
     query = f"""
         SELECT st.name,
                COUNT(a.id) AS sessions,

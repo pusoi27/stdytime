@@ -5,7 +5,7 @@ import sqlite3
 from flask import render_template, request, jsonify, send_file
 from modules import student_manager, assistant_manager, qr_generator, auth_manager
 from modules.database import DB_PATH
-from routes.auth import require_login
+from routes.auth import require_login, require_feature
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
@@ -20,6 +20,7 @@ def register_qr_routes(app):
     
     @app.route("/qr/generate")
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_generate():
         """Generate QR code for a specific student."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -28,6 +29,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/generate/<int:sid>", methods=["POST", "GET"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_generate_student(sid):
         """Generate and return QR code PNG for a student."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -40,6 +42,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/generate_all", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_generate_all():
         """Generate QR codes for all students where missing."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -77,6 +80,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/assistants/generate_all", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_assistants_generate_all():
         """Generate QR codes for all assistants where missing."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -102,6 +106,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/assistants/generate/<int:aid>", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_assistant_generate(aid):
         """Generate QR code for a single assistant."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -124,6 +129,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/books/generate_all", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_books_generate_all():
         """Generate QR codes for all books where missing."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -149,6 +155,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/books/generate/<int:bid>", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_book_generate(bid):
         """Generate QR code for a single book."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -173,6 +180,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/pdf/individual/<int:sid>')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_pdf_individual(sid):
         """Generate Avery 8160 PDF for a single student."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -187,6 +195,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/pdf/all')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_pdf_all():
         """Generate Avery 8160 PDF for all students."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -202,6 +211,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/assistants/pdf')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_assistants_pdf():
         """Generate Avery 8163 PDF for assistants with existing QR codes."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -220,6 +230,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/assistants/pdf/individual/<int:aid>')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_assistant_pdf_individual(aid):
         """Generate Avery 8163 PDF for a single assistant."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -235,6 +246,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/books/pdf')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_books_pdf():
         """Generate Avery 8163 PDF for all books with existing QR codes."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -256,6 +268,7 @@ def register_qr_routes(app):
 
     @app.route('/qr/books/pdf/individual/<int:bid>')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_book_pdf_individual(bid):
         """Generate PDF for a single book QR."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -277,6 +290,7 @@ def register_qr_routes(app):
 
     @app.route('/isbn/pdf/individual/<int:bid>')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def isbn_pdf_individual(bid):
         """Generate Avery 8160 PDF with ISBN for a single book."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -297,6 +311,7 @@ def register_qr_routes(app):
 
     @app.route('/isbn/pdf/all')
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def isbn_pdf_all():
         """Generate PDF with ISBN labels for all books that have valid ISBN (ISBN-13 or ISBN-10)."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -325,6 +340,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/print/individual")
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_print_individual():
         """Page to select a student and print their QR code."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -333,6 +349,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/print/all")
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_print_all():
         """Generate and display QR codes for all active students."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -342,6 +359,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/generate_page")
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_generate_page():
         """Display unified QR generation page for students, assistants, and books."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -355,6 +373,7 @@ def register_qr_routes(app):
 
     @app.route("/qr/print_page")
     @require_login
+    @require_feature(auth_manager.FEATURE_INSTRUCTOR_SETTINGS)
     def qr_print_page():
         """Display unified QR print page for students, assistants, and books."""
         owner_user_id = auth_manager.get_current_user_id()

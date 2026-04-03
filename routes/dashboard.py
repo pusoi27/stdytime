@@ -1,7 +1,7 @@
 # routes/dashboard.py
 from flask import render_template
 from modules import student_manager, auth_manager
-from routes.auth import require_login
+from routes.auth import require_login, require_feature
 import sqlite3
 from modules.database import DB_PATH
 from datetime import datetime
@@ -32,6 +32,7 @@ def register_dashboard_routes(app):
 
     @app.route("/")
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def dashboard():
         owner_user_id = auth_manager.get_current_user_id()
         return render_template(

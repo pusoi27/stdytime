@@ -1,7 +1,7 @@
 # routes/assistants.py
 from flask import render_template, request, redirect, url_for, flash
 from modules import assistant_manager, server_cache, db_backup_recovery, auth_manager
-from routes.auth import require_login, require_admin
+from routes.auth import require_login, require_admin, require_feature
 from routes.operation_utils import flash_scoped_failure, invalidate_scoped_cache
 
 
@@ -24,6 +24,7 @@ def register_assistant_routes(app):
     
     @app.route("/assistants")
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def assistants_list():
         owner_user_id = auth_manager.get_current_user_id()
 
@@ -39,6 +40,7 @@ def register_assistant_routes(app):
 
     @app.route("/assistants/add", methods=["GET", "POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def assistants_add():
         owner_user_id = auth_manager.get_current_user_id()
 
@@ -67,6 +69,7 @@ def register_assistant_routes(app):
 
     @app.route("/assistants/edit/<int:aid>", methods=["GET", "POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def assistants_edit(aid):
         owner_user_id = auth_manager.get_current_user_id()
         asst = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
@@ -98,6 +101,7 @@ def register_assistant_routes(app):
 
     @app.route("/assistants/delete/<int:aid>", methods=["POST"])
     @require_admin
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def assistants_delete(aid):
         owner_user_id = auth_manager.get_current_user_id()
 

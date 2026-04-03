@@ -3,7 +3,7 @@
   <div class="container-fluid">
 
     <!-- Brand -->
-    <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for('dashboard') }}">
+    <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for(subscription_access.default_home_endpoint) }}">
       <i class="bi bi-clock-history me-1"></i> KumoClock
     </a>
     <span class="text-white-50 small">Version {{ app_version }}</span>
@@ -30,6 +30,7 @@
         </li>
 
         <!-- Books -->
+        {% if subscription_access.can_access_books %}
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="booksMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-journal-bookmark"></i> Library Books</a>
           <ul class="dropdown-menu">
@@ -38,16 +39,20 @@
             <li><a class="dropdown-item" href="{{ url_for('books_loan_page') }}">Book Loan</a></li>
           </ul>
         </li>
+        {% endif %}
 
         <!-- Assistants -->
+        {% if subscription_access.can_access_assistants %}
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="assistMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Assistants on Duty</a>
           <ul class="dropdown-menu" id="assistantsList">
             <li><a class="dropdown-item disabled text-muted" href="#">Loading assistants...</a></li>
           </ul>
         </li>
+        {% endif %}
 
         <!-- Utilities with dropdown submenu -->
+        {% if subscription_access.can_access_utilities_print %}
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle text-white" href="#" id="utilMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-wrench-adjustable"></i> Utilities</a>
           <ul class="dropdown-menu" aria-labelledby="utilMenu">
@@ -58,14 +63,19 @@
             <li><a class="dropdown-item" href="{{ url_for('diploma_generator_page') }}"><i class="bi bi-award"></i> Diploma Generator</a></li>
           </ul>
         </li>
+        {% endif %}
 
 <!-- Instructor with dropdown submenu -->
+{% if subscription_access.can_access_instructor_profile %}
 <li class="nav-item dropdown">
   <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-workspace"></i> Instructor</a>
   <ul class="dropdown-menu" aria-labelledby="instMenu">
     <li><a class="dropdown-item" href="{{ url_for('instructor_profile') }}">Profile</a></li>
     <li><a class="dropdown-item" href="{{ url_for('center_calendar') }}"><i class="bi bi-calendar-week"></i> Center Calendar</a></li>
+    {% if subscription_access.can_access_instructor_reports or subscription_access.can_access_assistants or subscription_access.can_access_instructor_settings %}
     <li><hr class="dropdown-divider"></li>
+    {% endif %}
+    {% if subscription_access.can_access_instructor_reports %}
     <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Reports</a>
       <ul class="dropdown-menu">
@@ -74,7 +84,12 @@
         <li><a class="dropdown-item" href="{{ url_for('student_attendance_page') }}">Student Attendance</a></li>
       </ul>
     </li>
+    {% endif %}
+    {% if subscription_access.can_access_assistants %}
     <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Assistants</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('schedule_assistants') }}">Schedule Assistants</a></li>
+    {% endif %}
+    {% if subscription_access.can_access_instructor_settings %}
     <li class="dropdown-submenu">
       <a class="dropdown-item" href="#" role="button">Settings</a>
       <ul class="dropdown-menu">
@@ -88,8 +103,10 @@
         
       </ul>
     </li>
+    {% endif %}
   </ul>
 </li>
+{% endif %}
 
       </ul>
 
@@ -134,15 +151,18 @@
 <script>
 // Load assistants on page load
 document.addEventListener('DOMContentLoaded', function() {
-  loadAssistants();
+  if (document.getElementById('assistantsList')) {
+    loadAssistants();
+  }
 });
 
 // Load and populate assistant dropdown
 function loadAssistants() {
+  const list = document.getElementById('assistantsList');
+  if (!list) return;
   fetch('/api/assistants/list')
     .then(response => response.json())
     .then(assistants => {
-      const list = document.getElementById('assistantsList');
       list.innerHTML = '';
       
       if (assistants.length === 0) {
@@ -163,6 +183,7 @@ function loadAssistants() {
 // Toggle assistant on/off duty
 function toggleAssistant(event, aid) {
   event.preventDefault();
+  if (!document.getElementById('assistantsList')) return;
   fetch(`/api/assistants/select/${aid}`, { method: 'POST' })
     .then(response => response.json())
     .then(data => {

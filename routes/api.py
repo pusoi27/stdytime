@@ -8,7 +8,7 @@ from modules.database import DB_PATH
 from modules.utils import duration_seconds, time_now
 from datetime import datetime
 import sqlite3
-from routes.auth import require_login, require_admin
+from routes.auth import require_login, require_admin, require_feature
 
 # Global helper cache for performance (UI helpers)
 
@@ -62,6 +62,11 @@ def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user
     import traceback as _tb
 
     try:
+        current_user = auth_manager.get_user_by_id(owner_user_id)
+        if current_user and not current_user.has_feature(auth_manager.FEATURE_UTILITIES_EMAIL):
+            print(f"[checkout-email] Blocked by subscription tier for owner {owner_user_id}")
+            return {"status": "disabled", "message": "Checkout email is not included in the current subscription tier"}
+
         if not student_row:
             return {"status": "error", "message": "Student not found for checkout email"}
 
@@ -160,6 +165,7 @@ def register_api_routes(app):
     
     @app.route("/api/students/list")
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_students_list():
         """Return students with computed status: registered | active | checked."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -320,6 +326,7 @@ def register_api_routes(app):
 
     @app.route("/api/students/start/<int:sid>", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_students_start(sid):
         owner_user_id = auth_manager.get_current_user_id()
         student = student_manager.get_student(sid, owner_user_id=owner_user_id)
@@ -331,6 +338,7 @@ def register_api_routes(app):
 
     @app.route("/api/students/stop/<int:sid>", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_students_stop(sid):
         owner_user_id = auth_manager.get_current_user_id()
         student = student_manager.get_student(sid, owner_user_id=owner_user_id)
@@ -408,6 +416,7 @@ def register_api_routes(app):
 
     @app.route("/api/sessions/active")
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_sessions_active():
         """Return only currently active sessions; auto-stop any over 2h."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -498,6 +507,7 @@ def register_api_routes(app):
 
     @app.route("/api/sessions/clear", methods=["POST"])
     @require_admin
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_sessions_clear():
         """Stop all active sessions (DB + cache) and clear timer buffers."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -515,6 +525,7 @@ def register_api_routes(app):
 
     @app.route("/api/sessions/toggle", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_KUMOCLASS)
     def api_sessions_toggle():
         """Toggle a student's session: start if not active, stop if active.
         Request JSON: {"student_id": <id>}
@@ -668,6 +679,7 @@ def register_api_routes(app):
 
     @app.route("/api/assistants/profiles")
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def api_assistants_profiles():
         """Return assistant static profile list with longer TTL lane."""
         owner_user_id = auth_manager.get_current_user_id()
@@ -694,6 +706,7 @@ def register_api_routes(app):
 
     @app.route("/api/assistants/list")
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def api_assistants_list():
         """Return all assistants with on-duty status and start time.
         DB is the source of truth: an "open" assistant_sessions row (end_time NULL) => on duty.
@@ -734,6 +747,7 @@ def register_api_routes(app):
 
     @app.route("/api/assistants/select/<int:aid>", methods=["POST"])
     @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
     def api_assistants_select(aid):
         """Toggle assistant on/off duty with payroll time tracking.
         Uses DB open-row semantics so checkout works reliably (even after restarts).
@@ -763,6 +777,7 @@ def register_api_routes(app):
                     (now.isoformat(), duration, sess_id)
                 )
                 conn.commit()
+                server_cache.invalidate(_assistants_duty_cache_key(owner_user_id))
                 return jsonify({"success": True, "on_duty": False, "duration": duration})
             else:
                 # Start new open session

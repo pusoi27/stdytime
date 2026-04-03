@@ -200,6 +200,16 @@ def inject_current_user():
 
 
 @app.context_processor
+def inject_subscription_access():
+    """Inject subscription tier access flags into all templates."""
+    current_user = g.get('current_user')
+    context = auth_manager.get_tier_capabilities(
+        current_user.subscription_tier if current_user else auth_manager.TIER_3
+    )
+    return dict(subscription_access=context)
+
+
+@app.context_processor
 def inject_app_version():
     """Inject app version from VERSION file into all templates."""
     return dict(app_version=_ensure_version_up_to_date())
@@ -306,6 +316,7 @@ from routes.auth import register_auth_routes
 from routes.dashboard import register_dashboard_routes
 from routes.students import register_student_routes
 from routes.assistants import register_assistant_routes
+from routes.schedule import register_schedule_routes
 from routes.api import register_api_routes
 from routes.qr import register_qr_routes
 from routes.reports import register_reports_routes
@@ -333,6 +344,7 @@ register_auth_routes(app)
 register_dashboard_routes(app)
 register_student_routes(app, UPLOAD_FOLDER)
 register_assistant_routes(app)
+register_schedule_routes(app)
 register_instructor_profile_routes(app)
 register_api_routes(app)
 register_qr_routes(app)
