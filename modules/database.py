@@ -130,6 +130,18 @@ def init_db():
         )
     """)
 
+    # Explicit center-closed calendar dates (e.g., holiday closures)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS center_closed_dates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            closed_date TEXT NOT NULL,
+            reason TEXT DEFAULT 'Holiday / Center Closed',
+            owner_user_id INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(closed_date, owner_user_id)
+        )
+    """)
+
     # Users (Identity & Authentication)
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -299,6 +311,29 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "owner_user_id" not in cols and cols:
             cur.execute("ALTER TABLE assistant_schedule ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
+        conn.commit()
+
+    # Ensure center_closed_dates table and columns exist
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS center_closed_dates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                closed_date TEXT NOT NULL,
+                reason TEXT DEFAULT 'Holiday / Center Closed',
+                owner_user_id INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(closed_date, owner_user_id)
+            )
+            """
+        )
+        cur.execute("PRAGMA table_info(center_closed_dates)")
+        cols = [r[1] for r in cur.fetchall()]
+        if "reason" not in cols and cols:
+            cur.execute("ALTER TABLE center_closed_dates ADD COLUMN reason TEXT DEFAULT 'Holiday / Center Closed'")
+        if "owner_user_id" not in cols and cols:
+            cur.execute("ALTER TABLE center_closed_dates ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
         conn.commit()
 
     # Ensure instructor_profile has center_hours column (migration for center operating hours)

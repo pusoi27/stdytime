@@ -59,11 +59,25 @@ def get_scheduled_assistants_for_date(scheduled_date, owner_user_id: int = 1):
                FROM staff s
                INNER JOIN assistant_schedule a
                  ON s.id = a.assistant_id
-               WHERE a.scheduled_date = ? AND a.owner_user_id = ?
+               WHERE a.scheduled_date = ? AND a.owner_user_id = ? AND s.owner_user_id = ?
                ORDER BY s.name""",
-            (scheduled_date, owner_user_id),
+            (scheduled_date, owner_user_id, owner_user_id),
         )
         return c.fetchall()
+
+
+def is_assistant_scheduled(assistant_id, scheduled_date, owner_user_id: int = 1):
+    """Return True if the assistant is already scheduled for the given date and owner."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute(
+            """SELECT 1
+               FROM assistant_schedule
+               WHERE assistant_id = ? AND scheduled_date = ? AND owner_user_id = ?
+               LIMIT 1""",
+            (assistant_id, scheduled_date, owner_user_id),
+        ).fetchone()
+        return row is not None
 
 
 def get_unscheduled_assistants(owner_user_id: int = 1):
@@ -104,9 +118,9 @@ def get_assistants_schedule_for_month(year, month, owner_user_id: int = 1):
             """SELECT a.scheduled_date, s.id, s.name, s.role, s.email, s.phone
                FROM assistant_schedule a
                INNER JOIN staff s ON s.id = a.assistant_id
-               WHERE a.scheduled_date BETWEEN ? AND ? AND a.owner_user_id = ?
+               WHERE a.scheduled_date BETWEEN ? AND ? AND a.owner_user_id = ? AND s.owner_user_id = ?
                ORDER BY a.scheduled_date, s.name""",
-            (start_str, end_str, owner_user_id),
+            (start_str, end_str, owner_user_id, owner_user_id),
         )
         
         result = {}
@@ -118,3 +132,92 @@ def get_assistants_schedule_for_month(year, month, owner_user_id: int = 1):
             result[date_str].append(assistant)
         
         return result
+
+
+def set_center_closed_date(closed_date, reason="Holiday / Center Closed", owner_user_id: int = 1):
+    """
+    Mark a specific date as center-closed for the owner.
+    Returns True if inserted, False if already marked.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        try:
+            c.execute(
+                """INSERT INTO center_closed_dates (closed_date, reason, owner_user_id)
+                   VALUES (?, ?, ?)""",
+                (closed_date, reason or "Holiday / Center Closed", owner_user_id),
+            )
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+
+def unset_center_closed_date(closed_date, owner_user_id: int = 1):
+    """
+    Remove center-closed override for a date.
+    Returns number of rows deleted.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """DELETE FROM center_closed_dates
+               WHERE closed_date = ? AND owner_user_id = ?""",
+            (closed_date, owner_user_id),
+        )
+        conn.commit()
+        return c.rowcount
+
+
+def is_center_closed_date(closed_date, owner_user_id: int = 1):
+    """Return True if a date is explicitly marked center-closed."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        row = c.execute(
+            """SELECT 1
+               FROM center_closed_dates
+               WHERE closed_date = ? AND owner_user_id = ?
+               LIMIT 1""",
+            (closed_date, owner_user_id),
+        ).fetchone()
+        return row is not None
+
+
+def get_center_closed_dates_for_month(year, month, owner_user_id: int = 1):
+    """
+    Return a set of YYYY-MM-DD strings for center-closed dates in the given month.
+    """
+    first_day = datetime(year, month, 1).date()
+    if month == 12:
+        last_day = datetime(year + 1, 1, 1).date() - timedelta(days=1)
+    else:
+        last_day = datetime(year, month + 1, 1).date() - timedelta(days=1)
+
+    start_str = first_day.isoformat()
+    end_str = last_day.isoformat()
+
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """SELECT closed_date
+               FROM center_closed_dates
+               WHERE closed_date BETWEEN ? AND ? AND owner_user_id = ?""",
+            (start_str, end_str, owner_user_id),
+        )
+        return {row[0] for row in c.fetchall()}
+
+
+def unschedule_all_assistants_for_date(scheduled_date, owner_user_id: int = 1):
+    """
+    Remove all assistant assignments for a specific date.
+    Returns number of rows deleted.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """DELETE FROM assistant_schedule
+               WHERE scheduled_date = ? AND owner_user_id = ?""",
+            (scheduled_date, owner_user_id),
+        )
+        conn.commit()
+        return c.rowcount

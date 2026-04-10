@@ -67,7 +67,9 @@
                     style="min-height: 118px;">
                 <div class="card-header {% if is_today %}bg-success text-white{% elif is_operating %}bg-light{% else %}bg-secondary text-white{% endif %}">
                   <strong>{{ day['day'] }}</strong>
-                  {% if is_operating %}
+                  {% if day['is_center_closed'] %}
+                    <span class="badge bg-warning text-dark" style="font-size: 0.75rem;">Holiday</span>
+                  {% elif is_operating %}
                     <span class="badge bg-info" style="font-size: 0.75rem;">Open</span>
                   {% else %}
                     <span class="badge bg-secondary" style="font-size: 0.75rem;">Closed</span>
@@ -88,21 +90,27 @@
                   </div>
                   
                   <!-- Add Assistant Dropdown -->
-                  {% if is_operating %}
+                  {% if day['weekday_is_operating'] %}
                   <div class="mt-auto pt-1 border-top">
                     <select class="form-select form-select-sm assistant-select" data-date="{{ day['date'] }}">
-                      <option value="">+ Add Assistant</option>
-                      {% for asst in all_assistants %}
-                        {% set is_scheduled = false %}
-                        {% for s in day['assistants'] %}
-                          {% if s[0] == asst[0] %}
-                            {% set is_scheduled = true %}
+                      {% if day['is_center_closed'] %}
+                        <option value="">Center Closed (Holiday)</option>
+                        <option value="__reopen_center__">↺ Reopen Center</option>
+                      {% else %}
+                        <option value="">+ Add Assistant</option>
+                        {% for asst in all_assistants %}
+                          {% set ns = namespace(is_scheduled=false) %}
+                          {% for s in day['assistants'] %}
+                            {% if s[0] == asst[0] %}
+                              {% set ns.is_scheduled = true %}
+                            {% endif %}
+                          {% endfor %}
+                          {% if not ns.is_scheduled %}
+                          <option value="{{ asst[0] }}">{{ asst[1] }}{% if asst[2] %} ({{ asst[2] }}){% endif %}</option>
                           {% endif %}
                         {% endfor %}
-                        {% if not is_scheduled %}
-                        <option value="{{ asst[0] }}">{{ asst[1] }}{% if asst[2] %} ({{ asst[2] }}){% endif %}</option>
-                        {% endif %}
-                      {% endfor %}
+                        <option value="__center_closed__">🚫 Holiday / Center Closed</option>
+                      {% endif %}
                     </select>
                   </div>
                   {% endif %}
@@ -247,16 +255,96 @@ document.querySelectorAll('.remove-assistant').forEach(btn => {
 // Dropdown change handler
 document.querySelectorAll('.assistant-select').forEach(select => {
   select.addEventListener('change', (e) => {
-    const assistantId = parseInt(e.target.value);
-    if (!assistantId) return;
-    
     const date = e.target.dataset.date;
+    const selectedValue = e.target.value;
+
+    if (selectedValue === '__center_closed__') {
+      markCenterClosed(date, e.target);
+      e.target.value = '';
+      return;
+    }
+
+    if (selectedValue === '__reopen_center__') {
+      reopenCenter(date, e.target);
+      e.target.value = '';
+      return;
+    }
+
+    const assistantId = parseInt(selectedValue);
+    if (!assistantId) return;
+
     const assistantName = e.target.options[e.target.selectedIndex].text.split(' (')[0];
-    
+
     assignAssistant(assistantId, assistantName, date, e.target);
     e.target.value = '';
   });
 });
+
+function markCenterClosed(date, selectElement) {
+  const token = document.querySelector('input[name=csrf_token]')?.value ||
+                document.querySelector('meta[name=csrf_token]')?.content;
+
+  fetch('/api/schedule/mark-closed', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': token,
+    },
+    body: JSON.stringify({
+      scheduled_date: date,
+      reason: 'Holiday / Center Closed',
+    }),
+  })
+    .then(async (r) => {
+      const contentType = r.headers.get('content-type') || '';
+      const payload = contentType.includes('application/json') ? await r.json() : { error: await r.text() };
+      if (!r.ok) {
+        throw new Error(payload.error || 'Failed to mark center closed');
+      }
+      return payload;
+    })
+    .then(() => {
+      // Simplest reliable sync for badges/status/options across the day card.
+      window.location.reload();
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert(err.message || 'Error marking center closed');
+      if (selectElement) selectElement.value = '';
+    });
+}
+
+function reopenCenter(date, selectElement) {
+  const token = document.querySelector('input[name=csrf_token]')?.value ||
+                document.querySelector('meta[name=csrf_token]')?.content;
+
+  fetch('/api/schedule/unmark-closed', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': token,
+    },
+    body: JSON.stringify({
+      scheduled_date: date,
+    }),
+  })
+    .then(async (r) => {
+      const contentType = r.headers.get('content-type') || '';
+      const payload = contentType.includes('application/json') ? await r.json() : { error: await r.text() };
+      if (!r.ok) {
+        throw new Error(payload.error || 'Failed to reopen center for date');
+      }
+      return payload;
+    })
+    .then(() => {
+      window.location.reload();
+    })
+    .catch(err => {
+      console.error('Error:', err);
+      alert(err.message || 'Error reopening center for date');
+      if (selectElement) selectElement.value = '';
+    });
+}
 
 // Helper function: assign assistant to date
 function assignAssistant(assistantId, assistantName, date, selectElement) {

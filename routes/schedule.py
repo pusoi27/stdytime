@@ -5,6 +5,7 @@ from flask import render_template, request, jsonify, send_file, url_for
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.units import inch
+from reportlab.lib.colors import HexColor, white, black
 from reportlab.pdfgen import canvas
 from werkzeug.routing import BuildError
 from modules import schedule_manager, instructor_profile_manager, assistant_manager, auth_manager
@@ -13,6 +14,51 @@ from routes.auth import require_login, require_feature
 
 def register_schedule_routes(app):
     """Register assistant scheduling routes."""
+
+    def _read_app_version():
+        """Read version from VERSION file."""
+        try:
+            with open("VERSION", "r") as f:
+                return f.read().strip()
+        except Exception:
+            return "unknown"
+
+    # Same palette as the UI (schedule_assistants.html JS)
+    _ASSISTANT_PALETTE = [
+        HexColor('#2E7D32'),  # green
+        HexColor('#1565C0'),  # blue
+        HexColor('#6A1B9A'),  # purple
+        HexColor('#EF6C00'),  # orange
+        HexColor('#00897B'),  # teal
+        HexColor('#C62828'),  # red
+        HexColor('#5D4037'),  # brown
+        HexColor('#283593'),  # indigo
+        HexColor('#AD1457'),  # pink
+        HexColor('#37474F'),  # blue-grey
+    ]
+
+    def _assistant_color(assistant_id):
+        idx = abs(int(assistant_id or 0)) % len(_ASSISTANT_PALETTE)
+        return _ASSISTANT_PALETTE[idx]
+
+    def _get_operating_weekdays(profile):
+        """Return a set of weekday indices (0=Mon..6=Sun) when center is operating."""
+        days_map = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
+        open_days = set()
+        if not profile:
+            return open_days
+        for day_name, day_idx in days_map.items():
+            if profile.get(f"{day_name}_start"):
+                open_days.add(day_idx)
+        return open_days
 
     @app.route("/schedule/assistants")
     @require_login
@@ -74,6 +120,7 @@ def register_schedule_routes(app):
         
         # Get scheduled assistants for this month
         scheduled = schedule_manager.get_assistants_schedule_for_month(year, month, owner_user_id)
+        closed_dates = schedule_manager.get_center_closed_dates_for_month(year, month, owner_user_id)
         
         # Get all unscheduled assistants (pool)
         all_assistants = assistant_manager.get_all_assistants(owner_user_id)
@@ -89,12 +136,16 @@ def register_schedule_routes(app):
             date_str = date_obj.isoformat()
             weekday = date_obj.weekday()
             
-            is_operating = weekday in operating_days
+            weekday_is_operating = weekday in operating_days
+            is_center_closed = date_str in closed_dates
+            is_operating = weekday_is_operating and not is_center_closed
             scheduled_assistants = scheduled.get(date_str, [])
             
             week[weekday] = {
                 "day": day_num,
                 "date": date_str,
+                "weekday_is_operating": weekday_is_operating,
+                "is_center_closed": is_center_closed,
                 "is_operating": is_operating,
                 "assistants": scheduled_assistants,
             }
@@ -142,11 +193,26 @@ def register_schedule_routes(app):
         
         if not assistant_id or not scheduled_date:
             return jsonify({"error": "Missing assistant_id or scheduled_date"}), 400
+
+        # Validate date format and normalize
+        try:
+            parsed_date = datetime.strptime(str(scheduled_date), "%Y-%m-%d").date()
+            scheduled_date = parsed_date.isoformat()
+        except ValueError:
+            return jsonify({"error": "Invalid scheduled_date format; expected YYYY-MM-DD"}), 400
         
         # Verify assistant belongs to this user
         asst = assistant_manager.get_assistant(assistant_id, owner_user_id)
         if not asst:
             return jsonify({"error": "Assistant not found"}), 404
+
+        # Enforce business rule server-side: assignments only on operating days
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id)
+        operating_weekdays = _get_operating_weekdays(profile)
+        if parsed_date.weekday() not in operating_weekdays:
+            return jsonify({"error": "Cannot schedule assistants on closed days"}), 400
+        if schedule_manager.is_center_closed_date(scheduled_date, owner_user_id):
+            return jsonify({"error": "Cannot schedule assistants on center-closed dates"}), 400
         
         success = schedule_manager.schedule_assistant(
             assistant_id, scheduled_date, owner_user_id
@@ -154,8 +220,11 @@ def register_schedule_routes(app):
         
         if success:
             return jsonify({"success": True, "message": "Assistant scheduled"}), 200
-        else:
+
+        # Distinguish duplicate from other DB write errors when possible
+        if schedule_manager.is_assistant_scheduled(assistant_id, scheduled_date, owner_user_id):
             return jsonify({"error": "Assistant already scheduled for this date"}), 400
+        return jsonify({"error": "Unable to schedule assistant"}), 400
 
     @app.route("/api/schedule/unassign", methods=["POST"])
     @require_login
@@ -173,6 +242,12 @@ def register_schedule_routes(app):
         
         if not assistant_id or not scheduled_date:
             return jsonify({"error": "Missing assistant_id or scheduled_date"}), 400
+
+        # Validate date format and normalize
+        try:
+            scheduled_date = datetime.strptime(str(scheduled_date), "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return jsonify({"error": "Invalid scheduled_date format; expected YYYY-MM-DD"}), 400
         
         count = schedule_manager.unschedule_assistant(
             assistant_id, scheduled_date, owner_user_id
@@ -182,6 +257,72 @@ def register_schedule_routes(app):
             return jsonify({"success": True, "message": "Assistant unscheduled"}), 200
         else:
             return jsonify({"error": "Assistant not found in schedule"}), 400
+
+    @app.route("/api/schedule/mark-closed", methods=["POST"])
+    @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
+    def api_schedule_mark_closed():
+        """Mark a specific date as center closed (holiday/closure)."""
+        owner_user_id = auth_manager.get_current_user_id()
+        data = request.get_json(silent=True) or {}
+
+        scheduled_date = data.get("scheduled_date")
+        reason = data.get("reason") or "Holiday / Center Closed"
+
+        if not scheduled_date:
+            return jsonify({"error": "Missing scheduled_date"}), 400
+
+        try:
+            parsed_date = datetime.strptime(str(scheduled_date), "%Y-%m-%d").date()
+            scheduled_date = parsed_date.isoformat()
+        except ValueError:
+            return jsonify({"error": "Invalid scheduled_date format; expected YYYY-MM-DD"}), 400
+
+        # Only allow explicit closure override on otherwise operating weekdays.
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id)
+        operating_weekdays = _get_operating_weekdays(profile)
+        if parsed_date.weekday() not in operating_weekdays:
+            return jsonify({"error": "Date is already closed by center weekly operating hours"}), 400
+
+        inserted = schedule_manager.set_center_closed_date(scheduled_date, reason, owner_user_id)
+        removed_count = schedule_manager.unschedule_all_assistants_for_date(scheduled_date, owner_user_id)
+
+        return jsonify({
+            "success": True,
+            "message": "Center marked closed",
+            "already_closed": not inserted,
+            "removed_assistants": removed_count,
+        }), 200
+
+    @app.route("/api/schedule/unmark-closed", methods=["POST"])
+    @require_login
+    @require_feature(auth_manager.FEATURE_ASSISTANTS)
+    def api_schedule_unmark_closed():
+        """Remove center closed override for a specific date."""
+        owner_user_id = auth_manager.get_current_user_id()
+        data = request.get_json(silent=True) or {}
+
+        scheduled_date = data.get("scheduled_date")
+        if not scheduled_date:
+            return jsonify({"error": "Missing scheduled_date"}), 400
+
+        try:
+            parsed_date = datetime.strptime(str(scheduled_date), "%Y-%m-%d").date()
+            scheduled_date = parsed_date.isoformat()
+        except ValueError:
+            return jsonify({"error": "Invalid scheduled_date format; expected YYYY-MM-DD"}), 400
+
+        profile = instructor_profile_manager.get_instructor_profile(owner_user_id)
+        operating_weekdays = _get_operating_weekdays(profile)
+        if parsed_date.weekday() not in operating_weekdays:
+            return jsonify({"error": "Cannot reopen non-operating weekday"}), 400
+
+        removed = schedule_manager.unset_center_closed_date(scheduled_date, owner_user_id)
+        return jsonify({
+            "success": True,
+            "message": "Center reopened",
+            "was_closed": removed > 0,
+        }), 200
 
     @app.route("/schedule/assistants/pdf")
     @require_login
@@ -194,25 +335,14 @@ def register_schedule_routes(app):
         month = request.args.get("month", default=today.month, type=int)
 
         if month < 1:
-            month = 1
-        if month > 12:
             month = 12
+            year -= 1
+        elif month > 12:
+            month = 1
+            year += 1
 
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id)
-        operating_days = set()
-        if profile:
-            days_map = {
-                "monday": 0,
-                "tuesday": 1,
-                "wednesday": 2,
-                "thursday": 3,
-                "friday": 4,
-                "saturday": 5,
-                "sunday": 6,
-            }
-            for day_name, day_idx in days_map.items():
-                if profile.get(f"{day_name}_start"):
-                    operating_days.add(day_idx)
+        operating_days = _get_operating_weekdays(profile)
 
         first_day = datetime(year, month, 1).date()
         first_weekday = first_day.weekday()
@@ -222,6 +352,7 @@ def register_schedule_routes(app):
             last_day = datetime(year, month + 1, 1).date() - timedelta(days=1)
 
         scheduled = schedule_manager.get_assistants_schedule_for_month(year, month, owner_user_id)
+        closed_dates = schedule_manager.get_center_closed_dates_for_month(year, month, owner_user_id)
 
         weeks = []
         week = [None] * 7
@@ -232,10 +363,14 @@ def register_schedule_routes(app):
             date_obj = datetime(year, month, day_num).date()
             date_str = date_obj.isoformat()
             weekday = date_obj.weekday()
+            weekday_is_operating = weekday in operating_days
+            is_center_closed = date_str in closed_dates
             week[weekday] = {
                 "day": day_num,
                 "date": date_str,
-                "is_operating": weekday in operating_days,
+                "weekday_is_operating": weekday_is_operating,
+                "is_center_closed": is_center_closed,
+                "is_operating": weekday_is_operating and not is_center_closed,
                 "assistants": scheduled.get(date_str, []),
             }
             if weekday == 6:
@@ -249,8 +384,11 @@ def register_schedule_routes(app):
         width, height = landscape(letter)
 
         month_title = datetime(year, month, 1).strftime("%B %Y")
+        app_version = _read_app_version()
         canv.setFont("Helvetica-Bold", 15)
         canv.drawString(0.6 * inch, height - 0.6 * inch, f"Assistant Schedule — {month_title}")
+        canv.setFont("Helvetica", 8)
+        canv.drawRightString(width - 0.6 * inch, height - 0.6 * inch, f"v{app_version}")
         canv.setFont("Helvetica", 9)
         canv.drawString(0.6 * inch, height - 0.85 * inch, "Open days are labeled 'Open'.")
 
@@ -274,37 +412,63 @@ def register_schedule_routes(app):
             canv.rect(x, y, cell_w, cell_h, stroke=1, fill=0)
             canv.drawString(x + 4, y + cell_h - 12, day_headers[c])
 
-        for r, week_data in enumerate(weeks, start=1):
-            y = top - (r + 1) * cell_h
-            for c in range(cols):
-                x = left + c * cell_w
-                day = week_data[c]
+        for row_idx, week_data in enumerate(weeks, start=1):
+            y = top - (row_idx + 1) * cell_h
+            for col_idx in range(cols):
+                x = left + col_idx * cell_w
+                day = week_data[col_idx]
+                canv.setFillColor(black)
+                canv.setStrokeColor(black)
                 canv.rect(x, y, cell_w, cell_h, stroke=1, fill=0)
 
                 if not day:
                     continue
 
+                canv.setFillColor(black)
                 canv.setFont("Helvetica-Bold", 9)
                 canv.drawString(x + 4, y + cell_h - 12, str(day["day"]))
 
                 canv.setFont("Helvetica", 7)
-                status = "Open" if day["is_operating"] else "Closed"
+                if day.get("is_center_closed"):
+                    status = "Holiday"
+                else:
+                    status = "Open" if day["is_operating"] else "Closed"
                 canv.drawRightString(x + cell_w - 4, y + cell_h - 12, status)
 
-                lines = [a[1] for a in day["assistants"]]
-                max_lines = max(int((cell_h - 18) // 9), 1)
-                if len(lines) > max_lines:
-                    lines = lines[: max_lines - 1] + [f"+{len(day['assistants']) - (max_lines - 1)} more"]
+                assistants = day["assistants"]
+                badge_h = 9
+                badge_gap = 2
+                badge_step = badge_h + badge_gap
+                badge_w = cell_w - 8
+                max_badges = max(int((cell_h - 20) // badge_step), 1)
+                overflow = max(0, len(assistants) - max_badges)
+                visible = assistants if not overflow else assistants[:max_badges - 1]
 
                 ty = y + cell_h - 22
-                canv.setFont("Helvetica", 7)
-                for line in lines:
+                for asst in visible:
                     if ty < y + 3:
                         break
-                    canv.drawString(x + 4, ty, str(line)[:26])
-                    ty -= 8
+                    asst_id = asst[0]
+                    asst_name = str(asst[1])
+                    badge_color = _assistant_color(asst_id)
+                    # Draw colored background rectangle
+                    canv.setFillColor(badge_color)
+                    canv.setStrokeColor(badge_color)
+                    canv.rect(x + 4, ty - 1, badge_w, badge_h, stroke=0, fill=1)
+                    # Draw white label text on top
+                    canv.setFillColor(white)
+                    canv.setFont("Helvetica", 6.5)
+                    max_chars = max(int(badge_w / 5.5), 4)
+                    canv.drawString(x + 6, ty, asst_name[:max_chars])
+                    ty -= badge_step
+
+                canv.setFillColor(black)
+                canv.setStrokeColor(black)
+                if overflow:
+                    canv.setFont("Helvetica", 6)
+                    canv.drawString(x + 4, ty, f"+{overflow} more")
 
         canv.save()
         buffer.seek(0)
-        filename = f"assistant_schedule_{year:04d}_{month:02d}.pdf"
+        filename = f"assistant_schedule_{year:04d}_{month:02d}_v{app_version}.pdf"
         return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
