@@ -1,7 +1,7 @@
-# KumoClock v2.3.12 - Main Flask Application (Refactored)
+﻿# Stdytime v2.3.12 - Main Flask Application (Refactored)
 # ================================================================
 """
-KumoClock: Student class management system with dashboard, QR codes, and PDF label generation.
+Stdytime: Student class management system with dashboard, QR codes, and PDF label generation.
 Features: Student management, session tracking, QR generation, Avery 8160 PDF output, assistant duty tracking.
 """
 
@@ -351,9 +351,7 @@ register_qr_routes(app)
 register_reports_routes(app)
 register_book_routes(app)
 
-# Register utilities routes
-from routes.utilities import register_utilities_routes
-register_utilities_routes(app)
+
 
 
 # ================================================================
@@ -384,7 +382,7 @@ _clear_state_on_startup()
 def _check_version_on_startup():
     """Check and auto-bump version on app startup if source files have changed."""
     current_version = _ensure_version_up_to_date()
-    print(f"[startup] KumoClock version: {current_version}")
+    print(f"[startup] Stdytime version: {current_version}")
 
 _check_version_on_startup()
 

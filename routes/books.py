@@ -1,4 +1,4 @@
-# routes/books.py
+﻿# routes/books.py
 """Books management routes."""
 
 from flask import render_template, request, jsonify, redirect, url_for, flash
@@ -671,7 +671,7 @@ def _lookup_isbn_online(isbn: str):
         "q": f"isbn:{isbn}",
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; KumoClock/1.0)",
+        "User-Agent": "Mozilla/5.0 (compatible; Stdytime/1.0)",
     }
     resp = requests.get(url, params=params, headers=headers, timeout=10)
     if resp.status_code != 200:

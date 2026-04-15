@@ -1,4 +1,4 @@
-"""
+﻿"""
 schema_migration.py - Phase B: Add owner_user_id tenancy columns
 Migrates single-user schema to multi-tenant by adding owner_user_id to:
 - students, staff, books, sessions, assistant_sessions
@@ -9,7 +9,7 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join("data", "kumoclock.db")
+DB_PATH = os.path.join("data", "Stdytime.db")
 
 
 def migrate_schema():

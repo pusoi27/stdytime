@@ -1,317 +1,786 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+<style>
+  .student-form-shell {
+    max-width: 1024px;
+    margin: 1rem auto 2rem;
+    padding: 0 0.75rem;
+  }
 
-<div class="container-fluid mt-3" style="max-width:900px; padding:0 10px;">
-  <h4 class="mb-3">{{ action }} Student</h4>
-  <form method="post" enctype="multipart/form-data">
-    <!-- Basic Info Row -->
+  .student-form-hero {
+    background: linear-gradient(135deg, #1f3c88 0%, #3e7bfa 60%, #6fa8ff 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 0.55rem 0.85rem;
+    box-shadow: 0 10px 24px rgba(28, 57, 122, 0.2);
+    margin-bottom: 1rem;
+    max-width: 280px;
+  }
+
+  .student-form-hero h4 {
+    margin: 0;
+    font-weight: 700;
+    font-size: 1.05rem;
+  }
+
+  .form-card {
+    background: #ffffff;
+    border: 1px solid #e8edf7;
+    border-radius: 14px;
+    padding: 1rem;
+    box-shadow: 0 6px 18px rgba(16, 39, 82, 0.06);
+    margin-bottom: 0.9rem;
+  }
+
+  .form-card-title {
+    font-weight: 700;
+    font-size: 0.98rem;
+    color: #21335b;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: #3e7bfa;
+    display: inline-block;
+  }
+
+  .program-pill {
+    border: 1px solid #d7e4ff;
+    background: #f7faff;
+    border-radius: 12px;
+    padding: 0.55rem 0.65rem;
+    height: 100%;
+  }
+
+  .program-pill .form-check-label {
+    font-weight: 600;
+    color: #1d366b;
+  }
+
+  .program-pill small {
+    color: #5d6f96;
+  }
+
+  .sticky-actions {
+    position: sticky;
+    bottom: 0.5rem;
+    z-index: 5;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(6px);
+    border: 1px solid #e8edf7;
+    border-radius: 12px;
+    padding: 0.75rem;
+    box-shadow: 0 6px 18px rgba(16, 39, 82, 0.08);
+  }
+
+  .required-star {
+    color: #dc3545;
+    font-weight: 700;
+  }
+
+  .classification-card {
+    border: 1px solid #d9e1f2;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 0.8rem 0.6rem;
+    height: 100%;
+    transition: all 0.18s ease;
+    box-shadow: 0 2px 8px rgba(42, 61, 110, 0.04);
+  }
+
+  .classification-card:hover {
+    border-color: #c3cff1;
+    box-shadow: 0 6px 16px rgba(72, 92, 154, 0.08);
+  }
+
+  .classification-option {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .classification-label {
+    display: block;
+    cursor: pointer;
+    margin: 0;
+    text-align: center;
+  }
+
+  .classification-radio {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid #cad6ee;
+    margin: 0 auto 0.55rem;
+    position: relative;
+    transition: all 0.18s ease;
+  }
+
+  .classification-option:checked + .classification-label .classification-card {
+    border-color: #a855f7;
+    background: #fcf7ff;
+    box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.15), 0 8px 18px rgba(168, 85, 247, 0.12);
+  }
+
+  .classification-option:checked + .classification-label .classification-radio {
+    border-color: #a855f7;
+  }
+
+  .classification-option:checked + .classification-label .classification-radio::after {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border-radius: 50%;
+    background: #a855f7;
+  }
+
+  .classification-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.35rem 0.7rem 0.35rem 0.35rem;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #f5efff 0%, #efe7ff 100%);
+    color: #47306b;
+    font-weight: 700;
+    margin-bottom: 0.7rem;
+  }
+
+  .classification-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 30% 30%, #c084fc, #8b5cf6);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(139, 92, 246, 0.28);
+    font-size: 0.8rem;
+  }
+
+  .classification-name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #1f2a44;
+    margin-bottom: 0.18rem;
+  }
+
+  .classification-copy {
+    font-size: 0.69rem;
+    line-height: 1.25;
+    color: #6f7f9f;
+  }
+
+  .classification-grid {
+    --bs-gutter-x: 0.65rem;
+    --bs-gutter-y: 0.65rem;
+  }
+
+  .classification-grid > div {
+    flex: 0 0 25%;
+    max-width: 25%;
+  }
+
+  .study-summary {
+    font-size: 0.86rem;
+    color: #395b95;
+    font-weight: 600;
+    margin-top: 0.5rem;
+  }
+
+  .subject-pills-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0;
+  }
+
+  .subject-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #8b5cf6;
+    color: #fff;
+    border-radius: 999px;
+    padding: 0.3rem 0.65rem 0.3rem 0.85rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+
+  .subject-pill-x {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+
+  .subject-pill-x:hover {
+    color: #fff;
+  }
+
+  .btn-add-subject {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border: 1.5px dashed #a78bfa;
+    background: #faf5ff;
+    color: #7c3aed;
+    border-radius: 999px;
+    padding: 0.28rem 0.85rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-add-subject:hover {
+    background: #f3e8ff;
+    border-color: #7c3aed;
+  }
+
+  .subject-time-shared {
+    width: 80px;
+    text-align: center;
+  }
+
+  .subject-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(17, 24, 39, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1060;
+    padding: 1rem;
+  }
+
+  .subject-modal-backdrop.show {
+    display: flex;
+  }
+
+  .subject-modal {
+    width: min(420px, 100%);
+    background: #fff;
+    border: 1px solid #e2e8f6;
+    border-radius: 14px;
+    box-shadow: 0 14px 34px rgba(16, 39, 82, 0.22);
+    overflow: hidden;
+  }
+
+  .subject-modal-header {
+    padding: 0.75rem 0.95rem;
+    border-bottom: 1px solid #edf2fb;
+    font-weight: 700;
+    color: #233a70;
+  }
+
+  .subject-modal-body {
+    padding: 0.9rem 0.95rem;
+  }
+
+  .subject-modal-footer {
+    padding: 0.75rem 0.95rem;
+    border-top: 1px solid #edf2fb;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .classification-grid > div {
+      flex: 0 0 50%;
+      max-width: 50%;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .classification-grid > div {
+      flex: 0 0 100%;
+      max-width: 100%;
+    }
+  }
+</style>
+
+<div class="student-form-shell">
+  <div class="student-form-hero">
+    <h4>{{ action }} Student</h4>
+  </div>
+
+  <form method="post" id="studentForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="row g-2">
-      <div class="col-md-12">
-        <label class="form-label small">Name</label>
-        <input name="name" class="form-control form-control-sm" value="{{ student[1] if student else '' }}" required>
-      </div>
-    </div>
 
-    <!-- Contact Info Row -->
-    <div class="row g-2 mt-1">
-      <div class="col-md-6">
-        <label class="form-label small">Email</label>
-        <input name="email" type="email" class="form-control form-control-sm" value="{{ student[3] if student else '' }}">
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot"></span>Basic Information</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="name" class="form-label">Student Name <span class="required-star">*</span></label>
+          <input id="name" name="name" class="form-control" value="{{ student[1] if student else '' }}" required>
+        </div>
       </div>
-      <div class="col-md-6">
-        <label class="form-label small">Phone</label>
-        <input name="phone" class="form-control form-control-sm" value="{{ student[4] if student else '' }}">
-      </div>
-    </div>
 
-    <!-- All Checkboxes Grouped Together -->
-    <div class="row g-2 mt-2">
-      <div class="col-md-2">
-        <div class="form-check">
-          <input name="s1" type="checkbox" class="form-check-input subject-checkbox" id="s1Check" {{ 'checked' if (student and student[2] == 'S1') else '' }} onchange="handleSubjectChange('s1')">
-          <label class="form-check-label small" for="s1Check">S1 (One Subject)</label>
-        </div>
-      </div>
-      <div class="col-md-2">
-        <div class="form-check">
-          <input name="s2" type="checkbox" class="form-check-input subject-checkbox" id="s2Check" {{ 'checked' if (student and student[2] == 'S2') else '' }} onchange="handleSubjectChange('s2')">
-          <label class="form-check-label small" for="s2Check">S2 (Two Subjects)</label>
-        </div>
-      </div>
-      <div class="col-md-2">
-        <div class="form-check">
-          <input name="book_loaned" type="checkbox" class="form-check-input" id="bookLoanedCheck" {{ 'checked' if (student and student[7]) else '' }}>
-          <label class="form-check-label small" for="bookLoanedCheck">Book Loaned</label>
-        </div>
-      </div>
-      <div class="col-md-1">
-        <div class="form-check">
-          <input name="paper_ws" type="checkbox" class="form-check-input" id="paperWSCheck" {{ 'checked' if (student and student[8]) else '' }}>
-          <label class="form-check-label small" for="paperWSCheck">Paper WS</label>
-        </div>
-      </div>
-      <div class="col-md-2">
-        <div class="form-check">
-          <input name="el" type="checkbox" class="form-check-input el-pi-check" id="elCheck" {{ 'checked' if (student and student[13]) else '' }} onchange="handleELPIChange('el')">
-          <label class="form-check-label small" for="elCheck">Early Learner</label>
-        </div>
-      </div>
-      <div class="col-md-2">
-        <div class="form-check">
-          <input name="pi" type="checkbox" class="form-check-input el-pi-check" id="piCheck" {{ 'checked' if (student and student[14]) else '' }} onchange="handleELPIChange('pi')">
-          <label class="form-check-label small" for="piCheck">Primary Instruction</label>
-        </div>
-      </div>
-      <div class="col-md-1">
-        <div class="form-check">
-          <input name="v" type="checkbox" class="form-check-input" id="vCheck" {{ 'checked' if (student and student[15]) else '' }}>
-          <label class="form-check-label small" for="vCheck">Virtual</label>
+      <div class="row g-3 mt-1">
+        <div class="col-12">
+          <label class="form-label">Subjects <span class="required-star">*</span></label>
+
+          <div id="subjectPillsContainer" class="subject-pills-wrap">
+            <button type="button" id="addSubjectBtn" class="btn-add-subject">+ Add Subject</button>
+          </div>
+          <div id="subjectHiddenInputs"></div>
+
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <span class="small text-secondary">Study time:</span>
+            <input type="number" id="sharedMinutesInput" class="form-control subject-time-shared" min="5" step="5" value="{{ (subject_rows[0].minutes if subject_rows and subject_rows[0].minutes else 30) }}">
+            <span class="small text-muted">min per subject</span>
+          </div>
+          <div class="study-summary" id="studySummary">Total study duration: 30 min</div>
         </div>
       </div>
     </div>
-    <input type="hidden" name="subject" id="subjectValue" value="{{ student[2] if student else '' }}">
 
-    <!-- Math Goals Row -->
-    <div class="row g-2 mt-1">
-      <div class="col-md-6">
-        <label class="form-label small">Math Goal</label>
-        <input name="math_goal" class="form-control form-control-sm" value="{{ student[9] if student else '' }}">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small">Math WS/Week</label>
-        <input name="math_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[10] if student else 0 }}">
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot"></span>Contact</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label for="email" class="form-label">Email</label>
+          <input id="email" name="email" type="email" class="form-control" value="{{ student[3] if student else '' }}">
+        </div>
+        <div class="col-md-6">
+          <label for="phone" class="form-label">Phone</label>
+          <input id="phone" name="phone" class="form-control" value="{{ student[4] if student else '' }}">
+        </div>
       </div>
     </div>
 
-    <!-- Reading Goals Row -->
-    <div class="row g-2 mt-1">
-      <div class="col-md-6">
-        <label class="form-label small">Reading Goal</label>
-        <input name="reading_goal" class="form-control form-control-sm" value="{{ student[11] if student else '' }}">
+    <div class="form-card">
+      <div class="classification-title-wrap">
+        <span class="classification-icon">≋</span>
+        <span>Classification</span>
       </div>
-      <div class="col-md-6">
-        <label class="form-label small">Reading WS/Week</label>
-        <input name="reading_worksheets_per_week" type="number" class="form-control form-control-sm" min="0" value="{{ student[12] if student else 0 }}">
-      </div>
-    </div>
-
-    <!-- Day 1 Schedule Row -->
-    <div class="row g-2 mt-1">
-      <div class="col-md-6">
-        <label class="form-label small">Day 1</label>
-        <select name="day1" id="day1Select" class="form-control form-control-sm" onchange="updateDay1Times()">
-          <option value="">-- Select Day --</option>
-          {% if profile %}
-            {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
-            {% for day_name, day_key in days %}
-              {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
-                <option value="{{ day_name }}" {% if student and student[16] == day_name %}selected{% endif %}>{{ day_name }}</option>
-              {% endif %}
-            {% endfor %}
-          {% endif %}
-        </select>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small">Day 1 Time</label>
-        <select name="day1_time" id="day1TimeSelect" class="form-control form-control-sm">
-          <option value="">-- Select Time --</option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Day 2 Schedule Row -->
-    <div class="row g-2 mt-1">
-      <div class="col-md-6">
-        <label class="form-label small">Day 2</label>
-        <select name="day2" id="day2Select" class="form-control form-control-sm" onchange="updateDay2Times()">
-          <option value="">-- Select Day --</option>
-          {% if profile %}
-            {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
-            {% for day_name, day_key in days %}
-              {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
-                <option value="{{ day_name }}" {% if student and student[17] == day_name %}selected{% endif %}>{{ day_name }}</option>
-              {% endif %}
-            {% endfor %}
-          {% endif %}
-        </select>
-      </div>
-      <div class="col-md-6">
-        <label class="form-label small">Day 2 Time</label>
-        <select name="day2_time" id="day2TimeSelect" class="form-control form-control-sm">
-          <option value="">-- Select Time --</option>
-        </select>
+      <div class="row classification-grid">
+        <div>
+          <input class="classification-option" type="checkbox" name="el" id="assistedCheck" {% if student and student[9] %}checked{% endif %}>
+          <label class="classification-label" for="assistedCheck">
+            <div class="classification-card">
+              <div class="classification-radio"></div>
+              <div class="classification-name">Assisted</div>
+              <div class="classification-copy">Requires direct support</div>
+            </div>
+          </label>
+        </div>
+        <div>
+          <input class="classification-option" type="checkbox" name="pi" id="monitoredCheck" {% if (student and student[10]) or (not student) or (student and not student[8] and not student[9] and not student[10] and not student[11]) %}checked{% endif %}>
+          <label class="classification-label" for="monitoredCheck">
+            <div class="classification-card">
+              <div class="classification-radio"></div>
+              <div class="classification-name">Monitored</div>
+              <div class="classification-copy">Periodic check-ins</div>
+            </div>
+          </label>
+        </div>
+        <div>
+          <input class="classification-option" type="checkbox" name="paper_ws" id="independentCheck" {% if student and student[8] %}checked{% endif %}>
+          <label class="classification-label" for="independentCheck">
+            <div class="classification-card">
+              <div class="classification-radio"></div>
+              <div class="classification-name">Independent</div>
+              <div class="classification-copy">Self-guided pace</div>
+            </div>
+          </label>
+        </div>
+        <div>
+          <input class="classification-option" type="checkbox" name="v" id="virtualCheck" {% if student and student[11] %}checked{% endif %}>
+          <label class="classification-label" for="virtualCheck">
+            <div class="classification-card">
+              <div class="classification-radio"></div>
+              <div class="classification-name">Virtual</div>
+              <div class="classification-copy">100% remote learning</div>
+            </div>
+          </label>
+        </div>
       </div>
     </div>
 
-    <!-- Action Buttons -->
-    <div class="mt-3">
-      <button type="submit" class="btn btn-primary btn-sm">{{ action }}</button>
-      <a href="{{ url_for('students_list') }}" class="btn btn-secondary btn-sm">Cancel</a>
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot"></span>Weekly Schedule</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="day1Select">Day 1</label>
+          <select name="day1" id="day1Select" class="form-select" onchange="updateDay1Times()">
+            <option value="">-- Select Day --</option>
+            {% if profile %}
+              {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+              {% for day_name, day_key in days %}
+                {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+                  <option value="{{ day_name }}" {% if student and student[12] == day_name %}selected{% endif %}>{{ day_name }}</option>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="day1TimeSelect">Day 1 Time</label>
+          <select name="day1_time" id="day1TimeSelect" class="form-select">
+            <option value="">-- Select Time --</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="day2Select">Day 2</label>
+          <select name="day2" id="day2Select" class="form-select" onchange="updateDay2Times()">
+            <option value="">-- Select Day --</option>
+            {% if profile %}
+              {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+              {% for day_name, day_key in days %}
+                {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+                  <option value="{{ day_name }}" {% if student and student[13] == day_name %}selected{% endif %}>{{ day_name }}</option>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="day2TimeSelect">Day 2 Time</label>
+          <select name="day2_time" id="day2TimeSelect" class="form-select">
+            <option value="">-- Select Time --</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="sticky-actions d-flex flex-wrap gap-2 justify-content-end">
+      <a href="{{ url_for('students_list') }}" class="btn btn-outline-secondary">Cancel</a>
       {% if from_calendar %}
-        <a href="{{ url_for('center_calendar') }}" class="btn btn-info btn-sm">Calendar</a>
+        <a href="{{ url_for('center_calendar') }}" class="btn btn-outline-info">Back to Calendar</a>
       {% endif %}
+      <button type="submit" class="btn btn-primary">{{ action }} Student</button>
     </div>
   </form>
 </div>
 
+<div id="subjectModalBackdrop" class="subject-modal-backdrop" aria-hidden="true">
+  <div class="subject-modal" role="dialog" aria-modal="true" aria-labelledby="subjectModalTitle">
+    <div class="subject-modal-header" id="subjectModalTitle">Add Subject</div>
+    <div class="subject-modal-body">
+      <label for="subjectModalInput" class="form-label">Subject name</label>
+      <input id="subjectModalInput" type="text" class="form-control" placeholder="Enter subject name">
+      <div class="form-text">Example: Science, Art, Coding</div>
+    </div>
+    <div class="subject-modal-footer">
+      <button type="button" id="subjectModalCancel" class="btn btn-outline-secondary btn-sm">Cancel</button>
+      <button type="button" id="subjectModalSave" class="btn btn-primary btn-sm">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
-// Class hours data from instructor profile
-const classHours = {
-  {% if profile %}
-    {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
-    {% for day_name, day_key in days %}
-      {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
-        '{{ day_name }}': { start: '{{ profile[day_key + '_start'] }}', end: '{{ profile[day_key + '_end'] }}' },
-      {% endif %}
-    {% endfor %}
-  {% endif %}
-};
+  const initialSubjectRows = {{ subject_rows | tojson }};
 
-// Generate time slots in 30-minute increments
-function generateTimeSlots(startTime, endTime, offsetMinutes) {
-  const slots = [];
-  const [startHour, startMin] = startTime.split(':').map(Number);
-  const [endHour, endMin] = endTime.split(':').map(Number);
-  
-  let currentMinutes = startHour * 60 + startMin;
-  const endMinutes = endHour * 60 + endMin - offsetMinutes;
-  
-  while (currentMinutes <= endMinutes) {
-    const hour = Math.floor(currentMinutes / 60);
-    const min = currentMinutes % 60;
-    const timeStr = `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-    
-    // Convert to 12-hour format for display
-    const displayHour = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
-    const displayStr = `${displayHour}:${String(min).padStart(2, '0')} PM`;
-    
-    slots.push({ value: timeStr, display: displayStr });
-    currentMinutes += 30;
+  const classHours = {
+    {% if profile %}
+      {% set days = [('Monday', 'monday'), ('Tuesday', 'tuesday'), ('Wednesday', 'wednesday'), ('Thursday', 'thursday'), ('Friday', 'friday'), ('Saturday', 'saturday'), ('Sunday', 'sunday')] %}
+      {% for day_name, day_key in days %}
+        {% if profile[day_key + '_start'] and profile[day_key + '_end'] %}
+          '{{ day_name }}': { start: '{{ profile[day_key + '_start'] }}', end: '{{ profile[day_key + '_end'] }}' },
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  };
+
+  let activeSubjectList = []; // [{name: string}]
+
+  function normalizeKey(value) {
+    return String(value || '').trim().toLowerCase();
   }
-  
-  return slots;
-}
 
-// Handle Early Learner and Primary Instruction mutual exclusion
-function handleELPIChange(checkbox) {
-  const elCheck = document.getElementById('elCheck');
-  const piCheck = document.getElementById('piCheck');
-  
-  if (checkbox === 'el' && elCheck.checked) {
-    piCheck.checked = false;
-  } else if (checkbox === 'pi' && piCheck.checked) {
-    elCheck.checked = false;
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
-}
 
-// Update Day 1 time slots
-function updateDay1Times() {
-  const day1Select = document.getElementById('day1Select');
-  const day1TimeSelect = document.getElementById('day1TimeSelect');
-  const selectedDay = day1Select.value;
-  const savedTime = '{{ student[18] if student else "" }}';
-  
-  // Clear existing options
-  day1TimeSelect.innerHTML = '<option value="">-- Select Time --</option>';
-  
-  if (selectedDay && classHours[selectedDay]) {
-    // Get subject to determine offset
-    const s1 = document.getElementById('s1Check');
-    const s2 = document.getElementById('s2Check');
-    const offset = s1.checked ? 30 : (s2.checked ? 60 : 30);
-    
-    const hours = classHours[selectedDay];
-    const slots = generateTimeSlots(hours.start, hours.end, offset);
-    
-    slots.forEach(slot => {
-      const option = document.createElement('option');
-      option.value = slot.value;
-      option.textContent = slot.display;
-      if (savedTime && slot.value === savedTime) {
-        option.selected = true;
-      }
-      day1TimeSelect.appendChild(option);
-    });
+  function getSharedMinutes() {
+    const input = document.getElementById('sharedMinutesInput');
+    return Math.max(5, Number(input ? input.value : 30) || 30);
   }
-}
 
-// Update Day 2 time slots
-function updateDay2Times() {
-  const day2Select = document.getElementById('day2Select');
-  const day2TimeSelect = document.getElementById('day2TimeSelect');
-  const selectedDay = day2Select.value;
-  const savedTime = '{{ student[19] if student else "" }}';
-  
-  // Clear existing options
-  day2TimeSelect.innerHTML = '<option value="">-- Select Time --</option>';
-  
-  if (selectedDay && classHours[selectedDay]) {
-    // Get subject to determine offset
-    const s1 = document.getElementById('s1Check');
-    const s2 = document.getElementById('s2Check');
-    const offset = s1.checked ? 30 : (s2.checked ? 60 : 30);
-    
-    const hours = classHours[selectedDay];
-    const slots = generateTimeSlots(hours.start, hours.end, offset);
-    
-    slots.forEach(slot => {
-      const option = document.createElement('option');
-      option.value = slot.value;
-      option.textContent = slot.display;
-      if (savedTime && slot.value === savedTime) {
-        option.selected = true;
-      }
-      day2TimeSelect.appendChild(option);
-    });
+  function getTotalStudyMinutes() {
+    const count = activeSubjectList.length;
+    return count > 0 ? count * getSharedMinutes() : 30;
   }
-}
 
-// Initialize time slots on page load
-document.addEventListener('DOMContentLoaded', function() {
-  updateDay1Times();
-  updateDay2Times();
-});
-
-// Subject checkbox mutual exclusion logic
-function handleSubjectChange(checked) {
-  const s1 = document.getElementById('s1Check');
-  const s2 = document.getElementById('s2Check');
-  const subjectValue = document.getElementById('subjectValue');
-  
-  if (checked === 's1') {
-    if (s1.checked) {
-      s2.checked = false;
-      subjectValue.value = 'S1';
-    } else {
-      subjectValue.value = '';
-    }
-  } else if (checked === 's2') {
-    if (s2.checked) {
-      s1.checked = false;
-      subjectValue.value = 'S2';
-    } else {
-      subjectValue.value = '';
+  function updateStudySummary() {
+    const summary = document.getElementById('studySummary');
+    if (summary) {
+      summary.textContent = `Total study duration: ${getTotalStudyMinutes()} min`;
     }
   }
-  
-  // Regenerate time slots when subject changes
-  updateDay1Times();
-  updateDay2Times();
-}
 
-// Validate subject selection on form submission
-document.querySelector('form').addEventListener('submit', function(e) {
-  const s1 = document.getElementById('s1Check');
-  const s2 = document.getElementById('s2Check');
-  
-  if (!s1.checked && !s2.checked) {
-    e.preventDefault();
-    alert('Please select at least one subject type (S1 or S2)');
-    return false;
+  function renderPills() {
+    const container = document.getElementById('subjectPillsContainer');
+    const addBtn = document.getElementById('addSubjectBtn');
+    const hiddenDiv = document.getElementById('subjectHiddenInputs');
+    if (!container || !addBtn || !hiddenDiv) return;
+
+    container.querySelectorAll('.subject-pill').forEach(function (p) { p.remove(); });
+
+    activeSubjectList.forEach(function (subj) {
+      const pill = document.createElement('div');
+      pill.className = 'subject-pill';
+      pill.setAttribute('data-subject-name', subj.name);
+      pill.innerHTML = `${escapeHtml(subj.name)} <button type="button" class="subject-pill-x" aria-label="Remove">\u00d7</button>`;
+      container.insertBefore(pill, addBtn);
+    });
+
+    hiddenDiv.innerHTML = '';
+    activeSubjectList.forEach(function (subj) {
+      const inp = document.createElement('input');
+      inp.type = 'hidden';
+      inp.name = 'subject_name[]';
+      inp.value = subj.name;
+      hiddenDiv.appendChild(inp);
+    });
+
+    updateStudySummary();
+    updateDay1Times();
+    updateDay2Times();
   }
-});
+
+  function addSubject(name) {
+    const key = normalizeKey(name);
+    if (!key) return;
+    if (activeSubjectList.some(function (s) { return normalizeKey(s.name) === key; })) return;
+    activeSubjectList.push({ name: name.trim() });
+    renderPills();
+  }
+
+  function removeSubject(name) {
+    const key = normalizeKey(name);
+    activeSubjectList = activeSubjectList.filter(function (s) { return normalizeKey(s.name) !== key; });
+    renderPills();
+  }
+
+  function initSubjectsSection() {
+    const addBtn = document.getElementById('addSubjectBtn');
+    const pillsContainer = document.getElementById('subjectPillsContainer');
+    const sharedMinutesInput = document.getElementById('sharedMinutesInput');
+    const modalBackdrop = document.getElementById('subjectModalBackdrop');
+    const modalInput = document.getElementById('subjectModalInput');
+    const modalSave = document.getElementById('subjectModalSave');
+    const modalCancel = document.getElementById('subjectModalCancel');
+
+    if (!addBtn || !pillsContainer) return;
+
+    (initialSubjectRows || []).forEach(function (row) {
+      if (row && row.name && String(row.name).trim()) {
+        activeSubjectList.push({ name: String(row.name).trim() });
+      }
+    });
+
+    if (initialSubjectRows && initialSubjectRows.length > 0 && initialSubjectRows[0].minutes && sharedMinutesInput) {
+      sharedMinutesInput.value = String(Math.max(5, Number(initialSubjectRows[0].minutes) || 30));
+    }
+
+    if (activeSubjectList.length === 0) {
+      activeSubjectList.push({ name: 'Math' });
+    }
+
+    renderPills();
+
+    pillsContainer.addEventListener('click', function (e) {
+      const xBtn = e.target.closest('.subject-pill-x');
+      if (!xBtn) return;
+      const pill = xBtn.closest('.subject-pill');
+      if (pill) removeSubject(pill.getAttribute('data-subject-name'));
+    });
+
+    if (sharedMinutesInput) {
+      sharedMinutesInput.addEventListener('input', function () {
+        updateStudySummary();
+        updateDay1Times();
+        updateDay2Times();
+      });
+    }
+
+    function closeSubjectModal() {
+      if (!modalBackdrop) return;
+      modalBackdrop.classList.remove('show');
+      modalBackdrop.setAttribute('aria-hidden', 'true');
+      if (modalInput) modalInput.value = '';
+    }
+
+    function openSubjectModal() {
+      if (!modalBackdrop) return;
+      modalBackdrop.classList.add('show');
+      modalBackdrop.setAttribute('aria-hidden', 'false');
+      if (modalInput) { modalInput.value = ''; modalInput.focus(); }
+    }
+
+    function saveSubjectFromModal() {
+      const name = (modalInput?.value || '').trim();
+      if (!name) { if (modalInput) modalInput.focus(); return; }
+      addSubject(name);
+      closeSubjectModal();
+    }
+
+    addBtn.addEventListener('click', openSubjectModal);
+
+    if (modalSave) modalSave.addEventListener('click', saveSubjectFromModal);
+    if (modalCancel) modalCancel.addEventListener('click', closeSubjectModal);
+
+    if (modalInput) {
+      modalInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveSubjectFromModal(); }
+      });
+    }
+
+    if (modalBackdrop) {
+      modalBackdrop.addEventListener('click', function (e) {
+        if (e.target === modalBackdrop) closeSubjectModal();
+      });
+    }
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modalBackdrop && modalBackdrop.classList.contains('show')) {
+        closeSubjectModal();
+      }
+    });
+
+    updateStudySummary();
+  }
+
+  function to12Hour(minutesSinceMidnight) {
+    const h24 = Math.floor(minutesSinceMidnight / 60);
+    const min = minutesSinceMidnight % 60;
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 % 12 || 12;
+    return `${h12}:${String(min).padStart(2, '0')} ${ampm}`;
+  }
+
+  function generateTimeSlots(startTime, endTime, offsetMinutes = 30) {
+    const slots = [];
+    const [startHour, startMin] = startTime.split(':').map(Number);
+    const [endHour, endMin] = endTime.split(':').map(Number);
+
+    let current = (startHour * 60) + startMin;
+    const end = (endHour * 60) + endMin - offsetMinutes;
+
+    while (current <= end) {
+      const h = Math.floor(current / 60);
+      const m = current % 60;
+      const value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+      slots.push({ value, display: to12Hour(current) });
+      current += 30;
+    }
+
+    return slots;
+  }
+
+  function fillTimeOptions(daySelectId, timeSelectId, savedValue) {
+    const daySelect = document.getElementById(daySelectId);
+    const timeSelect = document.getElementById(timeSelectId);
+    const day = daySelect.value;
+    const offset = getTotalStudyMinutes();
+
+    timeSelect.innerHTML = '<option value="">-- Select Time --</option>';
+
+    if (!day || !classHours[day]) {
+      return;
+    }
+
+    const slots = generateTimeSlots(classHours[day].start, classHours[day].end, offset);
+    slots.forEach(slot => {
+      const opt = document.createElement('option');
+      opt.value = slot.value;
+      opt.textContent = slot.display;
+      if (savedValue && slot.value === savedValue) {
+        opt.selected = true;
+      }
+      timeSelect.appendChild(opt);
+    });
+  }
+
+  function updateDay1Times() {
+    fillTimeOptions('day1Select', 'day1TimeSelect', '{{ student[14] if student else "" }}');
+  }
+
+  function updateDay2Times() {
+    fillTimeOptions('day2Select', 'day2TimeSelect', '{{ student[15] if student else "" }}');
+  }
+
+  function initExclusiveClassification() {
+    const options = Array.from(document.querySelectorAll('.classification-option'));
+    const defaultOption = document.getElementById('monitoredCheck');
+
+    function keepOnly(checkedOption) {
+      options.forEach(option => {
+        option.checked = option === checkedOption;
+      });
+    }
+
+    options.forEach(option => {
+      option.addEventListener('change', function () {
+        if (this.checked) {
+          keepOnly(this);
+          return;
+        }
+
+        const anyChecked = options.some(o => o.checked);
+        if (!anyChecked && defaultOption) {
+          defaultOption.checked = true;
+        }
+      });
+    });
+
+    const checked = options.filter(o => o.checked);
+    if (checked.length === 0 && defaultOption) {
+      defaultOption.checked = true;
+    } else if (checked.length > 1) {
+      const priority = [
+        document.getElementById('monitoredCheck'),
+        document.getElementById('assistedCheck'),
+        document.getElementById('independentCheck'),
+        document.getElementById('virtualCheck')
+      ].filter(Boolean);
+      const chosen = priority.find(p => p.checked) || checked[0];
+      keepOnly(chosen);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    initSubjectsSection();
+    updateDay1Times();
+    updateDay2Times();
+    initExclusiveClassification();
+
+    document.getElementById('studentForm').addEventListener('submit', function (e) {
+      if (activeSubjectList.length === 0) {
+        e.preventDefault();
+        alert('Please add at least one subject.');
+        return;
+      }
+      const mins = String(getSharedMinutes());
+      const form = document.getElementById('studentForm');
+      activeSubjectList.forEach(function () {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'subject_minutes[]';
+        inp.value = mins;
+        form.appendChild(inp);
+      });
+    });
+  });
 </script>
 {% endblock %}

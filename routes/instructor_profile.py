@@ -3,6 +3,8 @@ from flask import render_template, request, redirect, url_for, flash, jsonify
 from modules import instructor_profile_manager, student_manager, auth_manager
 from datetime import datetime
 from routes.auth import require_login
+import math
+import json
 
 
 def register_instructor_profile_routes(app):
@@ -166,65 +168,79 @@ def register_instructor_profile_routes(app):
         
         # Place students in calendar
         for student in students:
+            total_study_minutes = 30
+            if len(student) > 19 and student[19]:
+                try:
+                    total_study_minutes = max(5, int(student[19]))
+                except (TypeError, ValueError):
+                    total_study_minutes = 30
+
+            subjects_display = student[2] if student[2] else 'N/A'
+            if len(student) > 17 and student[17]:
+                try:
+                    parsed_subjects = [str(s).strip() for s in json.loads(student[17]) if str(s).strip()]
+                    if parsed_subjects:
+                        subjects_display = ", ".join(parsed_subjects)
+                except (TypeError, ValueError):
+                    pass
+
             student_data = {
                 'id': student[0],
                 'name': student[1],
-                'subject': student[2] if student[2] else 'N/A',
+                'subject': subjects_display,
                 'email': student[4] if len(student) > 4 else '',
-                'el': student[14] if len(student) > 14 else 0,
-                'pi': student[15] if len(student) > 15 else 0,
-                'v': student[16] if len(student) > 16 else 0,
+                'el': student[10] if len(student) > 10 else 0,
+                'pi': student[11] if len(student) > 11 else 0,
+                'v': student[12] if len(student) > 12 else 0,
             }
             
             # Check if student has scheduled times
-            has_day1 = len(student) > 17 and student[17]
-            has_day2 = len(student) > 19 and student[19]
+            has_day1 = len(student) > 13 and student[13]
+            has_day2 = len(student) > 15 and student[15]
             has_scheduled_times = has_day1 or has_day2
             
             # Check if student is virtual
-            is_virtual = student[16] if len(student) > 16 else 0
+            is_virtual = student[12] if len(student) > 12 else 0
             
             # If virtual with NO scheduled times, add to virtual students list instead of calendar
             if is_virtual and not has_scheduled_times:
                 virtual_students.append(student_data)
                 continue
             
-            # Helper function to add student to a specific day/time, with optional next slot
-            def add_student_to_slot(day, time_display, student_data, schedule, add_next_slot=False):
+            # Helper function to add student to a specific day/time with additional slots based on study duration.
+            def add_student_to_slot(day, time_display, student_data, schedule, duration_minutes=30):
                 if day not in schedule['calendar']:
                     return
                 if time_display not in schedule['calendar'][day]:
                     schedule['calendar'][day][time_display] = []
                 schedule['calendar'][day][time_display].append(student_data)
-                
-                # If S2 subject, also add to next 30-minute slot
-                if add_next_slot:
+
+                additional_slots = max(0, math.ceil(max(5, duration_minutes) / 30) - 1)
+                for step in range(1, additional_slots + 1):
                     current_minutes = time_to_minutes(time_display)
-                    next_minutes = current_minutes + 30
+                    next_minutes = current_minutes + (step * 30)
                     next_time_display = minutes_to_time_display(next_minutes)
-                    
+
                     if next_time_display in schedule['time_slots']:
                         if next_time_display not in schedule['calendar'][day]:
                             schedule['calendar'][day][next_time_display] = []
                         schedule['calendar'][day][next_time_display].append(student_data)
             
             # Add to Day 1
-            if len(student) > 17 and student[17]:  # day1
-                day1 = student[17]
-                time1 = student[18] if len(student) > 18 else None
+            if len(student) > 13 and student[13]:  # day1
+                day1 = student[13]
+                time1 = student[14] if len(student) > 14 else None
                 if time1:
                     time_display = format_time_display(time1)
-                    is_s2 = student[2] == 'S2'
-                    add_student_to_slot(day1, time_display, student_data, schedule, add_next_slot=is_s2)
+                    add_student_to_slot(day1, time_display, student_data, schedule, duration_minutes=total_study_minutes)
             
             # Add to Day 2
-            if len(student) > 19 and student[19]:  # day2
-                day2 = student[19]
-                time2 = student[20] if len(student) > 20 else None
+            if len(student) > 15 and student[15]:  # day2
+                day2 = student[15]
+                time2 = student[16] if len(student) > 16 else None
                 if time2:
                     time_display = format_time_display(time2)
-                    is_s2 = student[2] == 'S2'
-                    add_student_to_slot(day2, time_display, student_data, schedule, add_next_slot=is_s2)
+                    add_student_to_slot(day2, time_display, student_data, schedule, duration_minutes=total_study_minutes)
 
         # Order students within each slot: EL first, then PI, then the rest
         for day in schedule['calendar']:
@@ -237,7 +253,7 @@ def register_instructor_profile_routes(app):
                     )
                 )
         
-        total_students = len([s for s in students if (len(s) > 18 and s[18]) or (len(s) > 20 and s[20])])
+        total_students = len([s for s in students if (len(s) > 14 and s[14]) or (len(s) > 16 and s[16])])
         schedule['virtual_students'] = virtual_students
         
         return render_template("center_calendar.html", schedule=schedule, total_students=total_students)

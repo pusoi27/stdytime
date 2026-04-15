@@ -7,6 +7,44 @@ from routes.operation_utils import flash_scoped_failure, invalidate_scoped_cache
 import sqlite3
 from modules.database import DB_PATH
 import os
+import json
+
+
+def _parse_subjects_from_form(form):
+    """Parse dynamic subject rows from form payload.
+
+    Supports both new array fields and legacy single-subject fields.
+    """
+    subjects = []
+    minutes = []
+
+    raw_subjects = form.getlist("subject_name[]")
+    raw_minutes = form.getlist("subject_minutes[]")
+
+    if raw_subjects:
+        for idx, raw in enumerate(raw_subjects):
+            subject = (raw or "").strip()
+            if not subject:
+                continue
+            minute_val = 30
+            if idx < len(raw_minutes):
+                try:
+                    minute_val = max(5, int(str(raw_minutes[idx]).strip() or "30"))
+                except ValueError:
+                    minute_val = 30
+            subjects.append(subject)
+            minutes.append(minute_val)
+
+    # Backward compatibility with legacy single-subject form.
+    if not subjects:
+        subject = (form.get("subject", "").strip() or "")
+        if subject == "New":
+            subject = form.get("custom_subject", "").strip()
+        if subject:
+            subjects = [subject]
+            minutes = [30]
+
+    return subjects, minutes
 
 
 def _students_list_cache_key(owner_user_id: int) -> str:
@@ -86,21 +124,18 @@ def register_student_routes(app, upload_folder):
     def students_add():
         owner_user_id = auth_manager.get_current_user_id()
         if request.method == "POST":
-            subject = (request.form.get("subject", "").strip() or "")
-            if subject not in {"S1", "S2"}:
-                flash("Please select a valid Subject (S1 or S2).", "danger")
+            subjects, subject_minutes = _parse_subjects_from_form(request.form)
+            if not subjects:
+                flash("Please add at least one subject.", "danger")
                 return redirect(url_for("students_add"))
+
             student_id = student_manager.add_student(
                 request.form["name"],
-                subject,
+                subjects[0],
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
                 book_loaned=int(bool(request.form.get("book_loaned"))),
                 paper_ws=int(bool(request.form.get("paper_ws"))),
-                math_goal=request.form.get("math_goal", ""),
-                math_worksheets_per_week=request.form.get("math_worksheets_per_week", 0),
-                reading_goal=request.form.get("reading_goal", ""),
-                reading_worksheets_per_week=request.form.get("reading_worksheets_per_week", 0),
                 el=int(bool(request.form.get("el"))),
                 pi=int(bool(request.form.get("pi"))),
                 v=int(bool(request.form.get("v"))),
@@ -109,6 +144,8 @@ def register_student_routes(app, upload_folder):
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
                 owner_user_id=owner_user_id,
+                subjects=subjects,
+                subject_minutes=subject_minutes,
             )
             # Invalidate tenant-scoped list lane + this student's static profile lane.
             _invalidate_student_caches(owner_user_id, student_id=student_id)
@@ -117,7 +154,8 @@ def register_student_routes(app, upload_folder):
         
         # Get instructor profile for class hours
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
-        return render_template("student_form.html", action="Add", student=None, profile=profile)
+        subject_rows = [{"name": "", "minutes": 30}]
+        return render_template("student_form.html", action="Add", student=None, profile=profile, subject_rows=subject_rows)
 
     @app.route("/students/edit/<int:sid>", methods=["GET", "POST"])
     @require_login
@@ -127,22 +165,19 @@ def register_student_routes(app, upload_folder):
         if not stu:
             return "Student not found", 404
         if request.method == "POST":
-            subject = (request.form.get("subject", "").strip() or "")
-            if subject not in {"S1", "S2"}:
-                flash("Please select a valid Subject (S1 or S2).", "danger")
+            subjects, subject_minutes = _parse_subjects_from_form(request.form)
+            if not subjects:
+                flash("Please add at least one subject.", "danger")
                 return redirect(url_for("students_edit", sid=sid))
+
             student_manager.update_student(
                 sid,
                 request.form["name"],
                 request.form.get("email", ""),
                 request.form.get("phone", ""),
-                subject=subject,
+                subject=subjects[0],
                 book_loaned=int(bool(request.form.get("book_loaned"))),
                 paper_ws=int(bool(request.form.get("paper_ws"))),
-                math_goal=request.form.get("math_goal", ""),
-                math_worksheets_per_week=request.form.get("math_worksheets_per_week", 0),
-                reading_goal=request.form.get("reading_goal", ""),
-                reading_worksheets_per_week=request.form.get("reading_worksheets_per_week", 0),
                 el=int(bool(request.form.get("el"))),
                 pi=int(bool(request.form.get("pi"))),
                 v=int(bool(request.form.get("v"))),
@@ -151,6 +186,8 @@ def register_student_routes(app, upload_folder):
                 day1_time=request.form.get("day1_time", ""),
                 day2_time=request.form.get("day2_time", ""),
                 owner_user_id=owner_user_id,
+                subjects=subjects,
+                subject_minutes=subject_minutes,
             )
             # Invalidate static profile/goals lane for this student + user-scoped list lane.
             _invalidate_student_caches(owner_user_id, student_id=sid)
@@ -164,7 +201,43 @@ def register_student_routes(app, upload_folder):
         # Get instructor profile for class hours
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
         from_calendar = request.args.get('from_calendar')
-        return render_template("student_form.html", action="Edit", student=stu, profile=profile, from_calendar=from_calendar)
+        subjects = []
+        minutes = []
+        if len(stu) > 16 and stu[16]:
+            try:
+                subjects = json.loads(stu[16])
+            except (TypeError, ValueError):
+                subjects = []
+        if len(stu) > 17 and stu[17]:
+            try:
+                minutes = json.loads(stu[17])
+            except (TypeError, ValueError):
+                minutes = []
+        if not subjects:
+            subjects = [stu[2]] if len(stu) > 2 and stu[2] else [""]
+        if not minutes:
+            minutes = [30] * len(subjects)
+
+        subject_rows = []
+        for idx, subject_name in enumerate(subjects):
+            minute_val = 30
+            if idx < len(minutes):
+                try:
+                    minute_val = max(5, int(minutes[idx]))
+                except (TypeError, ValueError):
+                    minute_val = 30
+            subject_rows.append({"name": str(subject_name or ""), "minutes": minute_val})
+        if not subject_rows:
+            subject_rows = [{"name": "", "minutes": 30}]
+
+        return render_template(
+            "student_form.html",
+            action="Edit",
+            student=stu,
+            profile=profile,
+            from_calendar=from_calendar,
+            subject_rows=subject_rows,
+        )
 
     @app.route("/students/delete/<int:sid>", methods=["POST"])
     @require_admin

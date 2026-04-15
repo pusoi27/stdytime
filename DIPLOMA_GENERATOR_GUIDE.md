@@ -1,7 +1,7 @@
-# Diploma Generator Integration - Complete
+﻿# Diploma Generator Integration - Complete
 
 ## Overview
-Successfully integrated diploma/certificate generation from the GitHub `award_ceremony_analysis` project into KumoClock. This includes DOCX template support, placeholder replacement, and PDF conversion functionality.
+Successfully integrated diploma/certificate generation from the GitHub `award_ceremony_analysis` project into Stdytime. This includes DOCX template support, placeholder replacement, and PDF conversion functionality.
 
 ## What Was Added
 
@@ -300,4 +300,4 @@ PLACEHOLDERS = {
 
 **Status**: ✅ Complete and Integrated
 **Date**: December 21, 2025
-**Version**: KumoClock v2.3.2 + Diploma Generator v1.0
+**Version**: Stdytime v2.3.2 + Diploma Generator v1.0

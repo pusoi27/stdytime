@@ -1,8 +1,8 @@
-# KumoClock v2.3.10 - Refactored Architecture
+﻿# Stdytime v2.3.10 - Refactored Architecture
 
 ## 🎯 Quick Overview
 
-**KumoClock** has been successfully refactored from a **monolithic 1,188-line Flask app** into a **modular, domain-organized architecture** while maintaining **100% backward compatibility**.
+**Stdytime** has been successfully refactored from a **monolithic 1,188-line Flask app** into a **modular, domain-organized architecture** while maintaining **100% backward compatibility**.
 
 ### Key Statistics
 - **Original app.py**: 1,188 lines
@@ -35,7 +35,7 @@
 │   └── utils.py
 ├── templates/                      # (Unchanged)
 ├── static/                         # (Unchanged)
-├── kumoclock/                      # (Unchanged)
+├── Stdytime/                      # (Unchanged)
 ├── REFACTORING_SUMMARY.md          # Detailed technical breakdown
 ├── REFACTORING_CHANGELOG.md        # Complete change log
 └── app.py.backup                   # Original app.py (preserved for safety)
@@ -199,7 +199,7 @@ Attendance and payroll reports.
 
 ### Run the Application
 ```bash
-cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock
+cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_Stdytime
 python app.py
 ```
 

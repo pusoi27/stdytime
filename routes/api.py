@@ -1,4 +1,4 @@
-# routes/api.py
+﻿# routes/api.py
 from flask import jsonify, request
 from modules import student_manager, assistant_manager, timer_manager, auth_manager
 from modules import server_cache
@@ -91,7 +91,7 @@ def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user
         duration_display = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
-        center_name = (profile.get('center_location') if profile else None) or 'KumoClock'
+        center_name = (profile.get('center_location') if profile else None) or 'Stdytime'
 
         email_subject = f"Class Checkout - {student_name}"
 

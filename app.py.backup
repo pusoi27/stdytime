@@ -1,8 +1,8 @@
-# ================================================================
-#  KumoClock v2.3.2 - Main Flask Application (Refactored)
+﻿# ================================================================
+#  Stdytime v2.3.2 - Main Flask Application (Refactored)
 # ================================================================
 """
-KumoClock: Student class management system with dashboard, QR codes, and PDF label generation.
+Stdytime: Student class management system with dashboard, QR codes, and PDF label generation.
 Features: Student management, session tracking, photo support, QR generation, Avery 8160 PDF output, assistant duty tracking.
 """
 
@@ -21,7 +21,7 @@ from modules.utils import format_hhmm
 #  Flask setup
 # ================================================================
 app = Flask(__name__)
-app.secret_key = "kumoclock_secret_key"
+app.secret_key = "Stdytime_secret_key"
 
 # Initialize / verify sqlite DB
 init_db()

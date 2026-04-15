@@ -1,11 +1,11 @@
-#*****************************
+﻿#*****************************
 #database.py   ver 04--
 #*****************************
 
 import sqlite3, os
 from datetime import datetime
 
-DB_PATH = os.path.join("data", "kumoclock.db")
+DB_PATH = os.path.join("data", "Stdytime.db")
 
 def init_db():
     os.makedirs("data", exist_ok=True)
@@ -18,6 +18,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT,
             subject TEXT,
+            subjects_json TEXT DEFAULT '[]',
+            subject_minutes_json TEXT DEFAULT '[]',
+            total_study_minutes INTEGER DEFAULT 30,
             level TEXT,
             book_loaned INTEGER DEFAULT 0,
             paper_ws INTEGER DEFAULT 0,
@@ -164,6 +167,9 @@ def init_db():
     if "subscription_tier" not in user_cols:
         c.execute("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'tier3'")
         conn.commit()
+    if "must_change_password" not in user_cols:
+        c.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+        conn.commit()
 
     # Sample data
     if not c.execute("SELECT COUNT(*) FROM students").fetchone()[0]:
@@ -185,12 +191,12 @@ def init_db():
                   ("Mathematics Basics","KumoPress","111222333",1,"5A"))
     # Ensure super admin user exists with global administrator rights.
     # Requested credentials:
-    #   Email:    admin@kumoclock
-    #   Password: KumoClock$admin
+    #   Email:    admin@Stdytime
+    #   Password: Stdytime$admin
     # If the account already exists, it is updated to remain active and admin.
     from werkzeug.security import generate_password_hash
-    super_admin_email = "admin@kumoclock"
-    super_admin_password_hash = generate_password_hash("KumoClock$admin", method='pbkdf2:sha256')
+    super_admin_email = "admin@Stdytime"
+    super_admin_password_hash = generate_password_hash("Stdytime$admin", method='pbkdf2:sha256')
     now = datetime.now().isoformat()
 
     existing_super_admin = c.execute(
@@ -245,6 +251,12 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN day2_time TEXT")
         if "owner_user_id" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN owner_user_id INTEGER NOT NULL DEFAULT 1")
+        if "subjects_json" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN subjects_json TEXT DEFAULT '[]'")
+        if "subject_minutes_json" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN subject_minutes_json TEXT DEFAULT '[]'")
+        if "total_study_minutes" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN total_study_minutes INTEGER DEFAULT 30")
         conn.commit()
 
     # Ensure required columns exist on staff table; drop orphaned columns
@@ -374,7 +386,7 @@ def init_db():
 # ====================================================================
 
 def get_db_connection():
-    """Open and return a database connection to kumoclock.db"""
+    """Open and return a database connection to Stdytime.db"""
     return sqlite3.connect(DB_PATH)
 
 

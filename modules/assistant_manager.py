@@ -1,9 +1,9 @@
-#*****************************
+﻿#*****************************
 # assistant_manager.py - Assistant management
 # Version: 2.2.0
 #*****************************
 """
-CRUD operations for staff assistants in KumoClock.
+CRUD operations for staff assistants in Stdytime.
 """
 
 import sqlite3

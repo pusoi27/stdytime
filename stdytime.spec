@@ -1,5 +1,5 @@
-# -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec file for KumoClock v04.05.16
+﻿# -*- mode: python ; coding: utf-8 -*-
+# PyInstaller spec file for Stdytime v04.05.16
 
 block_cipher = None
 
@@ -51,7 +51,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='KumoClock_v04.05.16',
+    name='Stdytime_v04.05.16',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

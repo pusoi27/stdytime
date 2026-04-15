@@ -1,10 +1,10 @@
-# Refactoring Changelog
+﻿# Refactoring Changelog
 
 ## Date: Current Session
 ## Version: 2.2.9 → 2.3.2
 
 ### What Changed
-Successfully refactored KumoClock's monolithic Flask application into a modular, domain-organized architecture.
+Successfully refactored Stdytime's monolithic Flask application into a modular, domain-organized architecture.
 
 ### Files Created
 1. **routes/dashboard.py** (54 lines)

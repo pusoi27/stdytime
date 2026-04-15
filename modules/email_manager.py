@@ -1,5 +1,5 @@
-"""
-Email Manager Module for KumoClock
+﻿"""
+Email Manager Module for Stdytime
 Handles email sending functionality for reports, notifications, and student communications
 Version: 06.00.00
 """
@@ -71,7 +71,7 @@ class EmailManager:
                 # Prevent auto-replies from mail servers
                 message['Precedence'] = 'bulk'
                 # Hide unsubscribe option (professional approach)
-                message['List-Unsubscribe'] = '<mailto:noreply@kumoclock.local>'
+                message['List-Unsubscribe'] = '<mailto:noreply@Stdytime.local>'
             
             # Attach plain text body
             part1 = MIMEText(body, 'plain')
@@ -169,7 +169,7 @@ Cumulative Study Time: {report_data.get('cum_study_time', 'N/A')}
 Current Subject Status: {report_data.get('current_subject_status', 'N/A')}
 
 Best regards,
-KumoClock Academic Management System
+Stdytime Academic Management System
 """
         
         # Create HTML body
@@ -192,7 +192,7 @@ KumoClock Academic Management System
 <body>
     <div class="header">
         <h2>🎓 Student Report Card</h2>
-        <p>KumoClock Academic Management System</p>
+        <p>Stdytime Academic Management System</p>
     </div>
     <div class="content">
         <p>Dear Parent/Guardian,</p>
@@ -233,7 +233,7 @@ KumoClock Academic Management System
         </table>
         
         <div class="footer">
-            <p>This is an automated message from KumoClock Academic Management System. Please do not reply to this email.</p>
+            <p>This is an automated message from Stdytime Academic Management System. Please do not reply to this email.</p>
             <p>For any questions, please contact your institution.</p>
         </div>
     </div>

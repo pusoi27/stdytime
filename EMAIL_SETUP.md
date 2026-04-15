@@ -1,4 +1,4 @@
-# Email Configuration Setup Guide for KumoClock
+﻿# Email Configuration Setup Guide for Stdytime
 
 ## Quick Setup
 
@@ -50,7 +50,7 @@ Contact your email provider for SMTP settings.
 After configuring .env, restart the Flask app:
 
 ```powershell
-cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock
+cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_Stdytime
 .venv\Scripts\python.exe app.py
 ```
 

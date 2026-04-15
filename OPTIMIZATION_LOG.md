@@ -1,7 +1,7 @@
-# KumoClock Optimization - v2.2.0
+﻿# Stdytime Optimization - v2.2.0
 
 **Date:** December 13, 2025  
-**Backup Location:** `c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock_backup_20251213_174654`
+**Backup Location:** `c:\Users\octav\AppData\Local\Programs\Python\Python312\005_Stdytime_backup_20251213_174654`
 
 ## Summary of Changes
 
@@ -61,8 +61,8 @@
 To restore the previous version:
 ```bash
 cd c:\Users\octav\AppData\Local\Programs\Python\Python312
-Remove-Item -Recurse 005_KumoClock
-Copy-Item -Recurse 005_KumoClock_backup_20251213_174654 005_KumoClock
+Remove-Item -Recurse 005_Stdytime
+Copy-Item -Recurse 005_Stdytime_backup_20251213_174654 005_Stdytime
 ```
 
 ## Next Steps

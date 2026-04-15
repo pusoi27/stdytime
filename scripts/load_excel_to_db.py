@@ -1,4 +1,4 @@
-"""
+﻿"""
 Load Levels_By_grade.xlsx and Levels_Index.xlsx into SQLite database
 Reads Excel files from OneDrive and creates persistent database tables
 """
@@ -10,7 +10,7 @@ import sys
 
 # Paths
 EXCEL_DIR = Path(r"C:\Users\octav\OneDrive\ODI Learning\Award Ceremony\award_ceremony_analysis\data")
-DB_PATH = Path(__file__).parent.parent / "data" / "kumoclock.db"
+DB_PATH = Path(__file__).parent.parent / "data" / "Stdytime.db"
 
 LEVELS_BY_GRADE_FILE = EXCEL_DIR / "Levels_By_grade.xlsx"
 LEVELS_INDEX_FILE = EXCEL_DIR / "Levels_Index.xlsx"

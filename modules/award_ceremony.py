@@ -1,6 +1,6 @@
-"""
+﻿"""
 Award Ceremony Analysis Module
-Integrates award ceremony analysis functionality into KumoClock
+Integrates award ceremony analysis functionality into Stdytime
 
 This module provides utilities for:
 - Analyzing student performance

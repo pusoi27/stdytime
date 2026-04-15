@@ -1,4 +1,4 @@
-# KumoClock Refactoring Summary
+﻿# Stdytime Refactoring Summary
 
 ## Overview
 Successfully refactored the monolithic **app.py** (1188 lines) into a modular, organized structure with logically grouped route files and helper modules.

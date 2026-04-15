@@ -1,10 +1,10 @@
-<!-- templates/navbar.html -->
+﻿<!-- templates/navbar.html -->
 <nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#0d6efd; font-weight:600;">
   <div class="container-fluid">
 
     <!-- Brand -->
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for(subscription_access.default_home_endpoint) }}">
-      <i class="bi bi-clock-history me-1"></i> KumoClock
+      <i class="bi bi-clock-history me-1"></i> Stdytime
     </a>
     <span class="text-white-50 small">Version {{ app_version }}</span>
 
@@ -51,19 +51,7 @@
         </li>
         {% endif %}
 
-        <!-- Utilities with dropdown submenu -->
-        {% if subscription_access.can_access_utilities_print %}
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle text-white" href="#" id="utilMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-wrench-adjustable"></i> Utilities</a>
-          <ul class="dropdown-menu" aria-labelledby="utilMenu">
-            <li><a class="dropdown-item" href="{{ url_for('report_card_page') }}">Student Activity Card</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('evaluation_page') }}">Student Evaluation</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('award_ceremony_page') }}">Award Ceremony</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('diploma_generator_page') }}"><i class="bi bi-award"></i> Diploma Generator</a></li>
-          </ul>
-        </li>
-        {% endif %}
+        
 
 <!-- Instructor with dropdown submenu -->
 {% if subscription_access.can_access_instructor_profile %}

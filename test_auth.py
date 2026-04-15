@@ -1,19 +1,19 @@
-import requests
+﻿import requests
 import json
 
-print("Testing KumoClock Authentication...")
+print("Testing Stdytime Authentication...")
 
 # Test 1: Check login page loads
 print("\n[Test 1] GET /auth/login")
 response = requests.get('http://localhost:5000/auth/login')
 print(f"  Status: {response.status_code} - {'✓ OK' if response.status_code == 200 else '✗ Failed'}")
-if "KumoClock" in response.text:
-    print("  ✓ Login page contains 'KumoClock'")
+if "Stdytime" in response.text:
+    print("  ✓ Login page contains 'Stdytime'")
 
 # Test 2: Try login with correct credentials
 print("\n[Test 2] POST /auth/login with correct credentials")
 response = requests.post('http://localhost:5000/auth/login', 
-    data={'email': 'admin@kumoclock.local', 'password': 'KumoClock@2025'},
+    data={'email': 'admin@Stdytime.local', 'password': 'Stdytime@2025'},
     allow_redirects=False
 )
 print(f"  Status: {response.status_code}")
@@ -28,7 +28,7 @@ elif response.status_code == 200:
 # Test 3: Try with wrong password
 print("\n[Test 3] POST /auth/login with WRONG password")
 response = requests.post('http://localhost:5000/auth/login', 
-    data={'email': 'admin@kumoclock.local', 'password': 'WrongPassword'},
+    data={'email': 'admin@Stdytime.local', 'password': 'WrongPassword'},
     allow_redirects=False
 )
 print(f"  Status: {response.status_code}")

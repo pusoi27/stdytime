@@ -1,4 +1,4 @@
-"""
+﻿"""
 auth_manager.py - User authentication and password management.
 Handles user registration, login verification, and password hashing.
 """
@@ -9,7 +9,7 @@ from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import session
 
-DB_PATH = os.path.join("data", "kumoclock.db")
+DB_PATH = os.path.join("data", "Stdytime.db")
 
 ROLE_ADMIN = "admin"
 ROLE_INSTRUCTOR = "instructor"

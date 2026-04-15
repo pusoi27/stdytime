@@ -1,7 +1,7 @@
-# Integration Summary: Award Ceremony Analysis + Utilities Menu
+﻿# Integration Summary: Award Ceremony Analysis + Utilities Menu
 
 ## Overview
-Successfully integrated the award ceremony analysis system from https://github.com/pusoi27/award_ceremony_analysis into KumoClock with a new "Utilities" menu containing three main features.
+Successfully integrated the award ceremony analysis system from https://github.com/pusoi27/award_ceremony_analysis into Stdytime with a new "Utilities" menu containing three main features.
 
 ## What Was Added
 
@@ -125,12 +125,12 @@ Awards are configurable via `data/award_rules.json`
 ## Integration Points
 
 ### Database Integration
-All features use the existing KumoClock database:
+All features use the existing Stdytime database:
 - `students` table (for student info, photos)
 - `session_log` table (for attendance tracking)
 
 ### UI/UX Integration
-- Follows existing KumoClock navbar style
+- Follows existing Stdytime navbar style
 - Uses Bootstrap 5 components
 - Consistent color scheme and icons
 - Responsive design for mobile
@@ -158,7 +158,7 @@ All features use the existing KumoClock database:
 
 ### Code Quality
 - No import errors (pandas is optional)
-- Follows existing KumoClock code style
+- Follows existing Stdytime code style
 - Comprehensive error handling
 - Well-documented code
 

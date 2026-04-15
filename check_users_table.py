@@ -1,6 +1,6 @@
-import sqlite3
+﻿import sqlite3
 
-conn = sqlite3.connect('data/kumoclock.db')
+conn = sqlite3.connect('data/Stdytime.db')
 c = conn.cursor()
 
 # Check if users table exists

@@ -1,14 +1,14 @@
-# Integration Summary: generate_all_diplomas.py → KumoClock
+﻿# Integration Summary: generate_all_diplomas.py → Stdytime
 
 **Date**: December 21, 2025  
-**Version**: KumoClock v2.3.2 with Diploma Generator v1.0  
+**Version**: Stdytime v2.3.2 with Diploma Generator v1.0  
 **Status**: ✅ **COMPLETE & TESTED**
 
 ---
 
 ## Executive Summary
 
-Successfully integrated the `generate_all_diplomas.py` functionality from the GitHub `award_ceremony_analysis` project into KumoClock. The system now provides a complete diploma/certificate generation workflow with:
+Successfully integrated the `generate_all_diplomas.py` functionality from the GitHub `award_ceremony_analysis` project into Stdytime. The system now provides a complete diploma/certificate generation workflow with:
 
 - Web-based diploma generation interface
 - Multi-student batch processing
@@ -35,7 +35,7 @@ Successfully integrated the `generate_all_diplomas.py` functionality from the Gi
 ### Architecture
 
 ```
-GitHub Project                    KumoClock Integration
+GitHub Project                    Stdytime Integration
 ─────────────────────────────────────────────────────────
 scripts/generate_all_diplomas.py → modules/diploma_generator.py
   ├─ Template loading               ├─ generate_diplomas()
@@ -325,7 +325,7 @@ Jane Doe,Award,math,3A100
 ### Directory Structure
 
 ```
-c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock\
+c:\Users\octav\AppData\Local\Programs\Python\Python312\005_Stdytime\
 ├── modules/
 │   ├── diploma_generator.py         ✅ NEW (420 lines)
 │   ├── award_ceremony.py            ✓ Updated (classify method now accepts subject)
@@ -357,7 +357,7 @@ c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock\
 ├── app.py                           ✓ Existing (routes already registered)
 ├── DIPLOMA_GENERATOR_GUIDE.md       ✅ NEW (Complete reference)
 ├── DIPLOMA_GENERATOR_QUICKSTART.md  ✅ NEW (User guide)
-└── kumoclock.db                     ✓ SQLite database
+└── Stdytime.db                     ✓ SQLite database
 ```
 
 ### What Needs User Action
@@ -480,7 +480,7 @@ c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock\
 
 1. **Start Flask app**
    ```bash
-   cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock
+   cd c:\Users\octav\AppData\Local\Programs\Python\Python312\005_Stdytime
    python app.py
    ```
 
@@ -593,9 +593,9 @@ c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock\
 
 ---
 
-## Comparison: GitHub vs. KumoClock Integration
+## Comparison: GitHub vs. Stdytime Integration
 
-| Aspect | GitHub Project | KumoClock Integration |
+| Aspect | GitHub Project | Stdytime Integration |
 |--------|----------------|----------------------|
 | **Interface** | Command-line script | Web UI with forms |
 | **Student Input** | CSV file | Database queries |
@@ -638,7 +638,7 @@ c:\Users\octav\AppData\Local\Programs\Python\Python312\005_KumoClock\
 
 1. **Upload Certificate Templates** (Required)
    - Download from GitHub `/data` folder
-   - Save to KumoClock `/data` directory
+   - Save to Stdytime `/data` directory
    - Reload diploma generator page
    - Verify all templates show ✓
 
@@ -673,7 +673,7 @@ For detailed help, see:
 
 | Component | Version | Date |
 |-----------|---------|------|
-| KumoClock Base | v2.3.2 | Dec 2025 |
+| Stdytime Base | v2.3.2 | Dec 2025 |
 | Diploma Generator | v1.0 | Dec 21, 2025 |
 | Integration | Complete | Dec 21, 2025 |
 | Python | 3.13.9 | - |

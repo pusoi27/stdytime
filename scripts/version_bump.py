@@ -1,5 +1,5 @@
-"""
-Version bump utility for KumoClock.
+﻿"""
+Version bump utility for Stdytime.
 
 Increments the patch segment of the VERSION file (xx.xx.xx -> xx.xx.(xx+1)),
 preserving zero-padding width of each segment.

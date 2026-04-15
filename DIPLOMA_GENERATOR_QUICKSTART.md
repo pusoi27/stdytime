@@ -1,4 +1,4 @@
-# Diploma Generator - Quick Start Guide
+﻿# Diploma Generator - Quick Start Guide
 
 ## Accessing the Diploma Generator
 
@@ -248,4 +248,4 @@ If you encounter issues:
 
 **Last Updated**: December 21, 2025  
 **Version**: Diploma Generator v1.0  
-**Compatible with**: KumoClock v2.3.2+  
+**Compatible with**: Stdytime v2.3.2+  
