@@ -9,6 +9,24 @@ from modules.database import DB_PATH
 import os
 import json
 
+STUDENT_PHOTOS_DIR = os.path.join('static', 'img', 'students')
+_ALLOWED_PHOTO_EXTS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+os.makedirs(STUDENT_PHOTOS_DIR, exist_ok=True)
+MAX_SUBJECTS = 3
+MAX_SCHEDULE_DAYS = 2
+
+
+def _save_student_photo(file_storage, student_id):
+    """Validate and save an uploaded photo.  Returns the saved filename or '' on failure."""
+    if not file_storage or not file_storage.filename:
+        return ''
+    ext = file_storage.filename.rsplit('.', 1)[-1].lower() if '.' in file_storage.filename else ''
+    if ext not in _ALLOWED_PHOTO_EXTS:
+        return ''
+    filename = secure_filename(f'student_{student_id}.{ext}')
+    file_storage.save(os.path.join(STUDENT_PHOTOS_DIR, filename))
+    return filename
+
 
 def _parse_subjects_from_form(form):
     """Parse dynamic subject rows from form payload.
@@ -44,7 +62,58 @@ def _parse_subjects_from_form(form):
             subjects = [subject]
             minutes = [30]
 
-    return subjects, minutes
+    return subjects[:MAX_SUBJECTS], minutes[:MAX_SUBJECTS]
+
+
+def _normalize_schedule_json(schedule_json_str):
+    """Normalize schedule payload and enforce max configured schedule days."""
+    entries = []
+    if schedule_json_str:
+        try:
+            entries = json.loads(schedule_json_str)
+        except (TypeError, ValueError):
+            entries = []
+
+    cleaned = []
+    seen_days = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        day = str(entry.get("day") or "").strip()
+        time = str(entry.get("time") or "").strip()
+        if not day or day in seen_days:
+            continue
+        seen_days.add(day)
+        cleaned.append({"day": day, "time": time})
+        if len(cleaned) >= MAX_SCHEDULE_DAYS:
+            break
+
+    return json.dumps(cleaned)
+
+
+def _extract_days(schedule_json_str):
+    """Preserve legacy day1/day2 fields from the first two schedule entries."""
+    entries = []
+    if schedule_json_str:
+        try:
+            entries = json.loads(schedule_json_str)
+        except (TypeError, ValueError):
+            entries = []
+
+    normalized = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        day = str(entry.get("day") or "").strip()
+        time = str(entry.get("time") or "").strip()
+        if day:
+            normalized.append((day, time))
+
+    day1 = normalized[0][0] if len(normalized) > 0 else ""
+    day1_time = normalized[0][1] if len(normalized) > 0 else ""
+    day2 = normalized[1][0] if len(normalized) > 1 else ""
+    day2_time = normalized[1][1] if len(normalized) > 1 else ""
+    return day1, day2, day1_time, day2_time
 
 
 def _students_list_cache_key(owner_user_id: int) -> str:
@@ -85,8 +154,8 @@ def register_student_routes(app, upload_folder):
         
         return render_template(
             "students.html",
-            students=student_manager.get_all_students(owner_user_id),
-            deleted_students=student_manager.get_deleted_students(owner_user_id),
+            students=student_manager.get_student_database_rows(owner_user_id, active=1),
+            deleted_students=student_manager.get_student_database_rows(owner_user_id, active=0),
             has_duplicates=has_duplicates,
             duplicate_summary=duplicate_summary,
         )
@@ -119,6 +188,7 @@ def register_student_routes(app, upload_folder):
             'duplicates': duplicate_summary
         })
 
+
     @app.route("/students/add", methods=["GET", "POST"])
     @require_login
     def students_add():
@@ -129,6 +199,8 @@ def register_student_routes(app, upload_folder):
                 flash("Please add at least one subject.", "danger")
                 return redirect(url_for("students_add"))
 
+            _sched_json = _normalize_schedule_json(request.form.get("schedule_json", ""))
+            _d1, _d2, _dt1, _dt2 = _extract_days(_sched_json)
             student_id = student_manager.add_student(
                 request.form["name"],
                 subjects[0],
@@ -139,23 +211,34 @@ def register_student_routes(app, upload_folder):
                 el=int(bool(request.form.get("el"))),
                 pi=int(bool(request.form.get("pi"))),
                 v=int(bool(request.form.get("v"))),
-                day1=request.form.get("day1", ""),
-                day2=request.form.get("day2", ""),
-                day1_time=request.form.get("day1_time", ""),
-                day2_time=request.form.get("day2_time", ""),
+                day1=_d1,
+                day2=_d2,
+                day1_time=_dt1,
+                day2_time=_dt2,
                 owner_user_id=owner_user_id,
                 subjects=subjects,
                 subject_minutes=subject_minutes,
+                schedule_json=_sched_json,
             )
             # Invalidate tenant-scoped list lane + this student's static profile lane.
             _invalidate_student_caches(owner_user_id, student_id=student_id)
+            # Save photo after we have the student_id
+            photo_file = request.files.get('photo')
+            if photo_file and photo_file.filename:
+                saved = _save_student_photo(photo_file, student_id)
+                if saved:
+                    student_manager.set_student_photo(student_id, saved, owner_user_id)
             flash("Student added successfully.", "success")
             return redirect(url_for("students_list"))
         
         # Get instructor profile for class hours
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
-        subject_rows = [{"name": "", "minutes": 30}]
-        return render_template("student_form.html", action="Add", student=None, profile=profile, subject_rows=subject_rows)
+        subject_rows = [
+            {"name": "Math", "minutes": 30, "selected": True},
+            {"name": "Reading", "minutes": 30, "selected": False},
+            {"name": "Writing", "minutes": 30, "selected": False},
+        ]
+        return render_template("student_form.html", action="Add", student=None, profile=profile, subject_rows=subject_rows, student_photo='', student_schedule=[])
 
     @app.route("/students/edit/<int:sid>", methods=["GET", "POST"])
     @require_login
@@ -170,6 +253,8 @@ def register_student_routes(app, upload_folder):
                 flash("Please add at least one subject.", "danger")
                 return redirect(url_for("students_edit", sid=sid))
 
+            _sched_json = _normalize_schedule_json(request.form.get("schedule_json", ""))
+            _d1, _d2, _dt1, _dt2 = _extract_days(_sched_json)
             student_manager.update_student(
                 sid,
                 request.form["name"],
@@ -181,16 +266,23 @@ def register_student_routes(app, upload_folder):
                 el=int(bool(request.form.get("el"))),
                 pi=int(bool(request.form.get("pi"))),
                 v=int(bool(request.form.get("v"))),
-                day1=request.form.get("day1", ""),
-                day2=request.form.get("day2", ""),
-                day1_time=request.form.get("day1_time", ""),
-                day2_time=request.form.get("day2_time", ""),
+                day1=_d1,
+                day2=_d2,
+                day1_time=_dt1,
+                day2_time=_dt2,
                 owner_user_id=owner_user_id,
                 subjects=subjects,
                 subject_minutes=subject_minutes,
+                schedule_json=_sched_json,
             )
             # Invalidate static profile/goals lane for this student + user-scoped list lane.
             _invalidate_student_caches(owner_user_id, student_id=sid)
+            # Save photo if a new one was uploaded
+            photo_file = request.files.get('photo')
+            if photo_file and photo_file.filename:
+                saved = _save_student_photo(photo_file, sid)
+                if saved:
+                    student_manager.set_student_photo(sid, saved, owner_user_id)
             flash("Student updated.", "info")
             # Check if came from calendar
             from_calendar = request.args.get('from_calendar')
@@ -228,8 +320,25 @@ def register_student_routes(app, upload_folder):
                     minute_val = 30
             subject_rows.append({"name": str(subject_name or ""), "minutes": minute_val})
         if not subject_rows:
-            subject_rows = [{"name": "", "minutes": 30}]
+            subject_rows = [
+                {"name": "Math", "minutes": 30, "selected": True},
+                {"name": "Reading", "minutes": 30, "selected": False},
+                {"name": "Writing", "minutes": 30, "selected": False},
+            ]
+        subject_rows = subject_rows[:MAX_SUBJECTS]
 
+        student_schedule = []
+        if len(stu) > 20 and stu[20]:
+            try:
+                student_schedule = json.loads(stu[20])
+            except (ValueError, TypeError):
+                pass
+        if not student_schedule:
+            if stu[12]:
+                student_schedule.append({'day': stu[12], 'time': stu[14] or ''})
+            if stu[13]:
+                student_schedule.append({'day': stu[13], 'time': stu[15] or ''})
+        student_schedule = student_schedule[:MAX_SCHEDULE_DAYS]
         return render_template(
             "student_form.html",
             action="Edit",
@@ -237,6 +346,8 @@ def register_student_routes(app, upload_folder):
             profile=profile,
             from_calendar=from_calendar,
             subject_rows=subject_rows,
+            student_photo=str(stu[19] or '') if len(stu) > 19 else '',
+            student_schedule=student_schedule,
         )
 
     @app.route("/students/delete/<int:sid>", methods=["POST"])

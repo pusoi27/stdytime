@@ -257,6 +257,10 @@ def init_db():
             cur.execute("ALTER TABLE students ADD COLUMN subject_minutes_json TEXT DEFAULT '[]'")
         if "total_study_minutes" not in cols:
             cur.execute("ALTER TABLE students ADD COLUMN total_study_minutes INTEGER DEFAULT 30")
+        if "photo" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN photo TEXT DEFAULT ''")
+        if "schedule_json" not in cols:
+            cur.execute("ALTER TABLE students ADD COLUMN schedule_json TEXT DEFAULT ''")
         conn.commit()
 
     # Ensure required columns exist on staff table; drop orphaned columns

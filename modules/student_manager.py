@@ -5,6 +5,136 @@
 import sqlite3, csv, os, json
 from modules.database import DB_PATH
 
+MAX_SUBJECTS = 3
+MAX_SCHEDULE_DAYS = 2
+
+
+def _loads_json_list(raw_value, default=None):
+    """Safely decode a JSON list value."""
+    if default is None:
+        default = []
+    if not raw_value:
+        return list(default)
+    try:
+        data = json.loads(raw_value)
+    except (TypeError, ValueError):
+        return list(default)
+    return data if isinstance(data, list) else list(default)
+
+
+def _classification_label(el=0, pi=0, paper_ws=0, v=0):
+    """Return the primary classification label for a student."""
+    if int(bool(el)):
+        return "Assisted"
+    if int(bool(pi)):
+        return "Monitored"
+    if int(bool(paper_ws)):
+        return "Independent"
+    if int(bool(v)):
+        return "Virtual"
+    return "Monitored"
+
+
+def _normalize_schedule_entries(schedule_json, day1='', day1_time='', day2='', day2_time=''):
+    """Return normalized schedule entries from JSON with legacy fallback."""
+    entries = []
+    seen = set()
+
+    for entry in _loads_json_list(schedule_json):
+        if not isinstance(entry, dict):
+            continue
+        day = str(entry.get('day') or '').strip()
+        time = str(entry.get('time') or '').strip()
+        if not day or day in seen:
+            continue
+        seen.add(day)
+        entries.append({'day': day, 'time': time})
+
+    if not entries:
+        for day, time in ((day1, day1_time), (day2, day2_time)):
+            day = str(day or '').strip()
+            if not day or day in seen:
+                continue
+            seen.add(day)
+            entries.append({'day': day, 'time': str(time or '').strip()})
+
+    return entries[:MAX_SCHEDULE_DAYS]
+
+
+def _build_student_database_row(row):
+    """Convert a database row into the student database view model."""
+    subjects = [str(s).strip() for s in _loads_json_list(row[10]) if str(s or '').strip()]
+    if not subjects and row[2]:
+        subjects = [str(row[2]).strip()]
+
+    subject_slots = [""] * MAX_SUBJECTS
+    for idx, subject_name in enumerate(subjects[:MAX_SUBJECTS]):
+        subject_slots[idx] = subject_name
+
+    schedule_entries = _normalize_schedule_entries(
+        row[11],
+        day1=row[12],
+        day1_time=row[13],
+        day2=row[14],
+        day2_time=row[15],
+    )
+    schedule_slots = [None] * MAX_SCHEDULE_DAYS
+    for idx, entry in enumerate(schedule_entries[:MAX_SCHEDULE_DAYS]):
+        schedule_slots[idx] = entry
+
+    return {
+        'id': row[0],
+        'name': row[1],
+        'subject': row[2],
+        'email': row[3],
+        'phone': row[4],
+        'active': bool(row[5]),
+        'book_loaned': bool(row[6]),
+        'paper_ws': bool(row[7]),
+        'el': bool(row[8]),
+        'pi': bool(row[9]),
+        'subjects': subjects,
+        'subject_slots': subject_slots,
+        'classification': _classification_label(el=row[8], pi=row[9], paper_ws=row[7], v=row[16]),
+        'virtual': bool(row[16]),
+        'schedule': schedule_entries,
+        'schedule_slots': schedule_slots,
+        'qr_filename': f"student_{row[0]}.png",
+    }
+
+
+def get_student_database_rows(owner_user_id=1, active=1):
+    """Get student rows tailored for the Student Database screen only."""
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                s.id,
+                s.name,
+                COALESCE(s.subject, ''),
+                COALESCE(s.email, ''),
+                COALESCE(s.phone, ''),
+                s.active,
+                s.book_loaned,
+                s.paper_ws,
+                s.el,
+                s.pi,
+                COALESCE(s.subjects_json, '[]'),
+                COALESCE(s.schedule_json, ''),
+                COALESCE(s.day1, ''),
+                COALESCE(s.day1_time, ''),
+                COALESCE(s.day2, ''),
+                COALESCE(s.day2_time, ''),
+                s.v
+            FROM students s
+            WHERE s.active = ? AND s.owner_user_id = ?
+            ORDER BY s.name
+            """,
+            (active, owner_user_id),
+        )
+        return [_build_student_database_row(row) for row in c.fetchall()]
+
 
 def safe_int(value, default=0):
     """Safely convert value to int, returning default if empty or invalid."""
@@ -38,6 +168,9 @@ def normalize_subject_entries(subjects, minutes):
     if not cleaned_subjects:
         cleaned_subjects = ["Math"]
         cleaned_minutes = [30]
+
+    cleaned_subjects = cleaned_subjects[:MAX_SUBJECTS]
+    cleaned_minutes = cleaned_minutes[:MAX_SUBJECTS]
 
     total_minutes = sum(cleaned_minutes) if cleaned_minutes else 30
     return cleaned_subjects, cleaned_minutes, total_minutes
@@ -73,7 +206,9 @@ def get_student(student_id, owner_user_id=1):
         c = conn.cursor()
         row = c.execute("""
             SELECT id,name,subject,email,phone,'' AS legacy_contact,active,book_loaned,paper_ws,
-                   el,pi,v,day1,day2,day1_time,day2_time,subjects_json,subject_minutes_json,total_study_minutes
+                   el,pi,v,day1,day2,day1_time,day2_time,subjects_json,subject_minutes_json,total_study_minutes,
+                   COALESCE(photo,'') AS photo,
+                   COALESCE(schedule_json,'') AS schedule_json
             FROM students WHERE id=? AND owner_user_id=?
         """, (student_id, owner_user_id)).fetchone()
         return row
@@ -103,11 +238,22 @@ def get_student_static_profile(student_id, owner_user_id=1):
         'subjects': json.loads(row[16] or '[]') if len(row) > 16 else ([row[2]] if row[2] else []),
         'subject_minutes': json.loads(row[17] or '[]') if len(row) > 17 else ([30] if row[2] else []),
         'total_study_minutes': int(row[18] or 30) if len(row) > 18 else 30,
+        'photo': str(row[19] or '') if len(row) > 19 else '',
     }
 
 
+def set_student_photo(student_id, photo_filename, owner_user_id=1):
+    """Set or clear a student's photo filename."""
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "UPDATE students SET photo=? WHERE id=? AND owner_user_id=?",
+            (photo_filename or '', student_id, owner_user_id),
+        )
+        conn.commit()
 
-def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1, subjects=None, subject_minutes=None):
+
+
+def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1, subjects=None, subject_minutes=None, schedule_json=""):
     """Add a new student to the database and automatically generate QR code.
     
     Args:
@@ -122,8 +268,8 @@ def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, el=0, pi
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("""INSERT INTO students
-            (name,subject,subjects_json,subject_minutes_json,total_study_minutes,email,phone,active,book_loaned,paper_ws,el,pi,v,day1,day2,day1_time,day2_time,owner_user_id)
-            VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?)""",
+            (name,subject,subjects_json,subject_minutes_json,total_study_minutes,email,phone,active,book_loaned,paper_ws,el,pi,v,day1,day2,day1_time,day2_time,owner_user_id,schedule_json)
+            VALUES (?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 name,
                 primary_subject,
@@ -142,6 +288,7 @@ def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, el=0, pi
                 day1_time,
                 day2_time,
                 owner_user_id,
+                schedule_json,
             ))
         student_id = c.lastrowid
         conn.commit()
@@ -158,7 +305,7 @@ def add_student(name, subject, email, phone, book_loaned=0, paper_ws=0, el=0, pi
 
 
 
-def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1, subjects=None, subject_minutes=None):
+def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=0, el=0, pi=0, v=0, day1="", day2="", day1_time="", day2_time="", owner_user_id=1, subjects=None, subject_minutes=None, schedule_json=""):
     """Update an existing student's information with ownership check."""
     subjects_list, minutes_list, total_minutes = normalize_subject_entries(
         subjects if subjects is not None else [subject],
@@ -168,7 +315,7 @@ def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=
 
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        c.execute("""UPDATE students SET name=?,subject=?,subjects_json=?,subject_minutes_json=?,total_study_minutes=?,email=?,phone=?,book_loaned=?,paper_ws=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=? WHERE id=? AND owner_user_id=?""",
+        c.execute("""UPDATE students SET name=?,subject=?,subjects_json=?,subject_minutes_json=?,total_study_minutes=?,email=?,phone=?,book_loaned=?,paper_ws=?,el=?,pi=?,v=?,day1=?,day2=?,day1_time=?,day2_time=?,schedule_json=? WHERE id=? AND owner_user_id=?""",
                   (
                       name,
                       primary_subject,
@@ -186,6 +333,7 @@ def update_student(sid, name, email, phone, subject="", book_loaned=0, paper_ws=
                       day2,
                       day1_time,
                       day2_time,
+                      schedule_json,
                       sid,
                       owner_user_id,
                   ))
