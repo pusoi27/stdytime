@@ -2,7 +2,7 @@
 # ================================================================
 """
 Stdytime: Student class management system with dashboard, QR codes, and PDF label generation.
-Features: Student management, session tracking, QR generation, Avery 8160 PDF output, assistant duty tracking.
+Features: Student management, session tracking, QR generation, Avery 8160 PDF output, staff duty tracking.
 """
 
 from flask import Flask, render_template, request, send_from_directory, jsonify, session, g
@@ -388,10 +388,10 @@ _check_version_on_startup()
 
 
 # ================================================================
-#  Auto-generate QR codes for students and assistants without them
+#  Auto-generate QR codes for students and staff without them
 # ================================================================
 def _auto_generate_missing_qr_codes():
-    """Generate QR codes for any students or assistants that don't have them yet."""
+    """Generate QR codes for any students or staff that don't have them yet."""
     try:
         import os
         out_dir = os.path.join('assets', 'qr_codes')
@@ -412,7 +412,7 @@ def _auto_generate_missing_qr_codes():
                 except Exception as e:
                     print(f"[startup] Failed to generate QR for student {sid}: {e}")
         
-        # Generate QR codes for assistants without them
+        # Generate QR codes for staff without them
         assistants = assistant_manager.get_all_assistants()
         assistant_count = 0
         for a in assistants:
@@ -428,7 +428,7 @@ def _auto_generate_missing_qr_codes():
                     print(f"[startup] Failed to generate QR for assistant {aid}: {e}")
         
         if student_count > 0 or assistant_count > 0:
-            print(f'[startup] Auto-generated QR codes: {student_count} students, {assistant_count} assistants')
+            print(f'[startup] Auto-generated QR codes: {student_count} students, {assistant_count} staff')
     except Exception as e:
         print("[startup] auto_generate_qr_codes error:", e)
 

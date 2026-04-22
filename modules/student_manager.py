@@ -187,7 +187,8 @@ def get_all_students(owner_user_id=1):
         # Get only active student data for this owner
         c.execute("""
              SELECT s.id, s.name, s.subject, s.level, s.email, s.phone, '' AS legacy_contact, s.active, s.book_loaned, s.paper_ws,
-                 s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time, s.subjects_json, s.subject_minutes_json, s.total_study_minutes
+                 s.el, s.pi, s.v, s.day1, s.day1_time, s.day2, s.day2_time, s.subjects_json, s.subject_minutes_json, s.total_study_minutes,
+                 COALESCE(s.photo, '') AS photo
             FROM students s
             WHERE s.active = 1 AND s.owner_user_id = ?
             ORDER BY s.name

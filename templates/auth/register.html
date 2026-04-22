@@ -55,13 +55,13 @@
                             <label for="role" class="form-label">Role</label>
                             <select class="form-control" id="role" name="role">
                                 <option value="instructor" {% if role == 'instructor' %}selected{% endif %}>Instructor</option>
-                                <option value="assistant" {% if role == 'assistant' %}selected{% endif %}>Assistant</option>
+                                <option value="assistant" {% if role == 'assistant' %}selected{% endif %}>Staff</option>
                                 {% if user_session and user_session.get('role') == 'admin' %}
                                 <option value="admin" {% if role == 'admin' %}selected{% endif %}>Admin</option>
                                 {% endif %}
                             </select>
                             {% if not (user_session and user_session.get('role') == 'admin') %}
-                            <small class="form-text text-muted">Public registration can create Instructor or Assistant accounts.</small>
+                            <small class="form-text text-muted">Public registration can create Instructor or Staff accounts.</small>
                             {% endif %}
                         </div>
 

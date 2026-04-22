@@ -34,7 +34,7 @@ FEATURE_INSTRUCTOR_SETTINGS = "instructor_settings"
 FEATURE_LABELS = {
     FEATURE_STUDENT_DATABASE: "Student database",
     FEATURE_BOOKS: "Library books",
-    FEATURE_ASSISTANTS: "Assistants and time tracking",
+    FEATURE_ASSISTANTS: "Staff and time tracking",
     FEATURE_KUMOCLASS: "KumoClass time tracking",
     FEATURE_UTILITIES_PRINT: "Utilities print to PDF",
     FEATURE_UTILITIES_EMAIL: "Email sending",
@@ -295,8 +295,8 @@ def initialize_new_user_data(user_id: int):
 
         if assistant_count == 0:
             fictitious_assistants = [
-                ("Noah Bennett", "Assistant", "noah.bennett@example.com", "555-0201", user_id),
-                ("Mia Rodriguez", "Assistant", "mia.rodriguez@example.com", "555-0202", user_id),
+                ("Noah Bennett", "Staff", "noah.bennett@example.com", "555-0201", user_id),
+                ("Mia Rodriguez", "Staff", "mia.rodriguez@example.com", "555-0202", user_id),
             ]
             c.executemany(
                 """

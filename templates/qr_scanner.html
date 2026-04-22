@@ -408,13 +408,13 @@ async function finalizeScan(){
         const res = await fetch('/api/assistants/list', { cache:'no-store', headers:{'Cache-Control':'no-store'} });
         const list = await res.json();
         const a = list.find(x => x.id === id);
-        displayName = a ? a.name : `Assistant ${id}`;
+        displayName = a ? a.name : `Staff ${id}`;
       } else if (type === 'BOOK'){
         displayName = titleMatch ? titleMatch : `Book ${id}`;
       }
     }catch(err){
       console.error('fetch error:', err);
-      displayName = displayName || (type === 'BOOK' ? `Book ${id}` : (type === 'ASST' ? `Assistant ${id}` : `Student ${id}`));
+      displayName = displayName || (type === 'BOOK' ? `Book ${id}` : (type === 'ASST' ? `Staff ${id}` : `Student ${id}`));
     }
   }
 

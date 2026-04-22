@@ -204,27 +204,27 @@ def register_schedule_routes(app):
         # Verify assistant belongs to this user
         asst = assistant_manager.get_assistant(assistant_id, owner_user_id)
         if not asst:
-            return jsonify({"error": "Assistant not found"}), 404
+            return jsonify({"error": "Staff member not found"}), 404
 
         # Enforce business rule server-side: assignments only on operating days
         profile = instructor_profile_manager.get_instructor_profile(owner_user_id)
         operating_weekdays = _get_operating_weekdays(profile)
         if parsed_date.weekday() not in operating_weekdays:
-            return jsonify({"error": "Cannot schedule assistants on closed days"}), 400
+            return jsonify({"error": "Cannot schedule staff on closed days"}), 400
         if schedule_manager.is_center_closed_date(scheduled_date, owner_user_id):
-            return jsonify({"error": "Cannot schedule assistants on center-closed dates"}), 400
+            return jsonify({"error": "Cannot schedule staff on center-closed dates"}), 400
         
         success = schedule_manager.schedule_assistant(
             assistant_id, scheduled_date, owner_user_id
         )
         
         if success:
-            return jsonify({"success": True, "message": "Assistant scheduled"}), 200
+            return jsonify({"success": True, "message": "Staff scheduled"}), 200
 
         # Distinguish duplicate from other DB write errors when possible
         if schedule_manager.is_assistant_scheduled(assistant_id, scheduled_date, owner_user_id):
-            return jsonify({"error": "Assistant already scheduled for this date"}), 400
-        return jsonify({"error": "Unable to schedule assistant"}), 400
+            return jsonify({"error": "Staff member already scheduled for this date"}), 400
+        return jsonify({"error": "Unable to schedule staff member"}), 400
 
     @app.route("/api/schedule/unassign", methods=["POST"])
     @require_login
@@ -254,9 +254,9 @@ def register_schedule_routes(app):
         )
         
         if count > 0:
-            return jsonify({"success": True, "message": "Assistant unscheduled"}), 200
+            return jsonify({"success": True, "message": "Staff unscheduled"}), 200
         else:
-            return jsonify({"error": "Assistant not found in schedule"}), 400
+            return jsonify({"error": "Staff member not found in schedule"}), 400
 
     @app.route("/api/schedule/mark-closed", methods=["POST"])
     @require_login
@@ -386,7 +386,7 @@ def register_schedule_routes(app):
         month_title = datetime(year, month, 1).strftime("%B %Y")
         app_version = _read_app_version()
         canv.setFont("Helvetica-Bold", 15)
-        canv.drawString(0.6 * inch, height - 0.6 * inch, f"Assistant Schedule — {month_title}")
+        canv.drawString(0.6 * inch, height - 0.6 * inch, f"Staff Schedule — {month_title}")
         canv.setFont("Helvetica", 8)
         canv.drawRightString(width - 0.6 * inch, height - 0.6 * inch, f"v{app_version}")
         canv.setFont("Helvetica", 9)

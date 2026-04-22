@@ -55,7 +55,7 @@ def register_assistant_routes(app):
                     owner_user_id=owner_user_id,
                 )
                 invalidate_scoped_cache(lambda: _invalidate_assistants_cache(owner_user_id))
-                flash("Assistant added successfully.", "success")
+                flash("Staff member added successfully.", "success")
             except Exception as e:
                 flash_scoped_failure(
                     backup_path=backup_path,
@@ -74,7 +74,7 @@ def register_assistant_routes(app):
         owner_user_id = auth_manager.get_current_user_id()
         asst = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not asst:
-            return "Assistant not found", 404
+            return "Staff member not found", 404
         if request.method == "POST":
             backup_path = db_backup_recovery.create_backup("assistants_edit")
             try:
@@ -87,7 +87,7 @@ def register_assistant_routes(app):
                     owner_user_id=owner_user_id,
                 )
                 invalidate_scoped_cache(lambda: _invalidate_assistants_cache(owner_user_id))
-                flash("Assistant updated.", "info")
+                flash("Staff member updated.", "info")
             except Exception as e:
                 flash_scoped_failure(
                     backup_path=backup_path,
@@ -109,7 +109,7 @@ def register_assistant_routes(app):
         try:
             assistant_manager.delete_assistant(aid, owner_user_id=owner_user_id)
             invalidate_scoped_cache(lambda: _invalidate_assistants_cache(owner_user_id))
-            flash("Assistant deleted.", "warning")
+            flash("Staff member deleted.", "warning")
         except Exception as e:
             flash_scoped_failure(
                 backup_path=backup_path,

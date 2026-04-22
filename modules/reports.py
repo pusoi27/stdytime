@@ -48,7 +48,7 @@ def get_student_attendance_summary(days=30, owner_user_id=1):
     return rows
 
 
-# --- Assistant hours summary for last N days ---
+# --- Staff hours summary for last N days ---
 def get_assistant_hours_summary(days=30, owner_user_id=1):
     days = int(days)
     query = f"""
@@ -79,7 +79,7 @@ def generate_assistant_hours_report(days=30, filename=None):
         rows.append(r)
     if not filename:
         filename = f"assistant_hours_{days}d.pdf"
-    title = f"Assistant Hours Summary (last {days} days)"
+    title = f"Staff Hours Summary (last {days} days)"
     return generate_report(title, rows, filename)
 
 

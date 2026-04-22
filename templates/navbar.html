@@ -41,12 +41,12 @@
         </li>
         {% endif %}
 
-        <!-- Assistants -->
+        <!-- Staff -->
         {% if subscription_access.can_access_assistants %}
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle text-white" href="#" id="assistMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Assistants on Duty</a>
+          <a class="nav-link dropdown-toggle text-white" href="#" id="assistMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Staff on Duty</a>
           <ul class="dropdown-menu" id="assistantsList">
-            <li><a class="dropdown-item disabled text-muted" href="#">Loading assistants...</a></li>
+            <li><a class="dropdown-item disabled text-muted" href="#">Loading staff...</a></li>
           </ul>
         </li>
         {% endif %}
@@ -74,8 +74,8 @@
     </li>
     {% endif %}
     {% if subscription_access.can_access_assistants %}
-    <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Assistants</a></li>
-    <li><a class="dropdown-item" href="{{ url_for('schedule_assistants') }}">Schedule Assistants</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Staff</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('schedule_assistants') }}">Schedule Staff</a></li>
     {% endif %}
     {% if subscription_access.can_access_instructor_settings %}
     <li class="dropdown-submenu">
@@ -127,8 +127,6 @@
             </ul>
           </div>
         {% endif %}
-        
-        <a href="{{ url_for('exit_app') }}" class="text-danger fw-bold text-decoration-none" onclick="return confirm('Are you sure you want to exit the application?')"><i class="bi bi-box-arrow-left"></i> Exit</a>
       </div>
     </div>
   </div>
@@ -154,7 +152,7 @@ function loadAssistants() {
       list.innerHTML = '';
       
       if (assistants.length === 0) {
-        list.innerHTML = '<li><a class="dropdown-item disabled text-muted" href="#">No assistants available</a></li>';
+        list.innerHTML = '<li><a class="dropdown-item disabled text-muted" href="#">No staff available</a></li>';
         return;
       }
       
@@ -165,10 +163,10 @@ function loadAssistants() {
         list.appendChild(li);
       });
     })
-    .catch(error => console.error('Error loading assistants:', error));
+    .catch(error => console.error('Error loading staff:', error));
 }
 
-// Toggle assistant on/off duty
+// Toggle staff on/off duty
 function toggleAssistant(event, aid) {
   event.preventDefault();
   if (!document.getElementById('assistantsList')) return;
@@ -183,10 +181,10 @@ function toggleAssistant(event, aid) {
         }
       }
     })
-    .catch(error => console.error('Error toggling assistant:', error));
+    .catch(error => console.error('Error toggling staff:', error));
 }
 
-// Generate all assistant QRs (only missing ones)
+// Generate all staff QRs (only missing ones)
 function generateAllAssistantQRs(){
   fetch('/qr/assistants/generate_all', { method: 'POST' })
     .then(r => r.json())
@@ -198,8 +196,8 @@ function generateAllAssistantQRs(){
       }
     })
     .catch(err => {
-      console.error('Error generating assistant QRs', err);
-      alert('Error generating assistant QRs: ' + err);
+      console.error('Error generating staff QRs', err);
+      alert('Error generating staff QRs: ' + err);
     });
 }
 
@@ -289,12 +287,12 @@ document.querySelectorAll('.dropdown').forEach(dropdown => {
 });
 </script>
 
-<!-- Assistant Report Modal -->
+<!-- Staff Report Modal -->
 <div class="modal fade" id="assistantReportModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-sm modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Assistant Hours (CSV)</h5>
+        <h5 class="modal-title">Staff Hours (CSV)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">

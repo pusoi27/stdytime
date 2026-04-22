@@ -112,7 +112,7 @@ def register_qr_routes(app):
         owner_user_id = auth_manager.get_current_user_id()
         assistant = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not assistant:
-            return "Assistant not found", 404
+            return "Staff member not found", 404
         out_dir = os.path.join('assets', 'qr_codes')
         os.makedirs(out_dir, exist_ok=True)
         qr_name = f"assistant_{aid}"
@@ -224,7 +224,7 @@ def register_qr_routes(app):
             if os.path.exists(qr_path):
                 labels.append({'name': a[1], 'qr_path': qr_path})
         if not labels:
-            return "No assistant QR codes found. Generate them first.", 400
+            return "No staff QR codes found. Generate them first.", 400
         pdf_buffer = _build_avery8163_pdf(labels)
         return send_file(pdf_buffer, as_attachment=True, download_name="assistant_qr_avery8163.pdf", mimetype='application/pdf')
 
@@ -236,7 +236,7 @@ def register_qr_routes(app):
         owner_user_id = auth_manager.get_current_user_id()
         assistant = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not assistant:
-            return "Assistant not found", 404
+            return "Staff member not found", 404
         qr_path = os.path.join('assets', 'qr_codes', f"assistant_{aid}.png")
         if not os.path.exists(qr_path):
             return "QR code not found. Generate it first.", 400

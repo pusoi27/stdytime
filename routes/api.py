@@ -8,6 +8,7 @@ from modules.database import DB_PATH
 from modules.utils import duration_seconds, time_now
 from datetime import datetime
 import sqlite3
+import json
 from routes.auth import require_login, require_admin, require_feature
 
 # Global helper cache for performance (UI helpers)
@@ -501,6 +502,8 @@ def register_api_routes(app):
                 "book_loaned": s[8] if len(s) > 8 else 0,
                 "paper_ws": s[9] if len(s) > 9 else 0,
                 "start_time": start,
+                "subjects": json.loads(s[17] or '[]') if len(s) > 17 and s[17] else ([s[2]] if s[2] else []),
+                "photo": s[20] if len(s) > 20 else '',
             })
 
         return jsonify(result)
@@ -755,7 +758,7 @@ def register_api_routes(app):
         owner_user_id = auth_manager.get_current_user_id()
         assistant = assistant_manager.get_assistant(aid, owner_user_id=owner_user_id)
         if not assistant:
-            return jsonify({"error": "Assistant not found"}), 404
+            return jsonify({"error": "Staff member not found"}), 404
 
         now = datetime.now()
         with sqlite3.connect(DB_PATH) as conn:

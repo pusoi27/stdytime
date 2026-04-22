@@ -12,17 +12,17 @@ from modules.database import DB_PATH
 from routes.auth import require_login, require_feature
 
 def register_reports_routes(app):
-    """Register reports routes (assistant hours and attendance)."""
+    """Register reports routes (staff hours and attendance)."""
     
     # ================================================================
-    # Assistant Hours Reports
+    # Staff Hours Reports
     # ================================================================
     
     @app.route('/reports/assistants')
     @require_login
     @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants():
-        """Display assistant hours report page with date range selection."""
+        """Display staff hours report page with date range selection."""
         owner_user_id = auth_manager.get_current_user_id()
         # Default date suggestions (last 30 days)
         today = datetime.today().date()
@@ -87,7 +87,7 @@ def register_reports_routes(app):
     @require_login
     @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants_pdf():
-        """Generate PDF of assistant hours report with date range."""
+        """Generate PDF of staff hours report with date range."""
         owner_user_id = auth_manager.get_current_user_id()
         start_param = request.args.get('start')
         end_param = request.args.get('end')
@@ -151,7 +151,7 @@ def register_reports_routes(app):
     @require_login
     @require_feature(auth_manager.FEATURE_INSTRUCTOR_REPORTS)
     def reports_assistants_csv():
-        """Generate CSV of assistant duty log with date range."""
+        """Generate CSV of staff duty log with date range."""
         owner_user_id = auth_manager.get_current_user_id()
         start = request.args.get('start')
         end = request.args.get('end')

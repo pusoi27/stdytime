@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="container mt-4">
-  <h4 class="mb-3 text-primary">Assistants</h4>
+  <h4 class="mb-3 text-primary">Staff</h4>
 
   <!-- Add button -->
   <div class="mb-2">
-    <a href="{{ url_for('assistants_add') }}" class="btn btn-success btn-sm">Add Assistant</a>
+    <a href="{{ url_for('assistants_add') }}" class="btn btn-success btn-sm">Add Staff</a>
     <form action="{{ url_for('qr_assistants_generate_all') }}" method="post" class="d-inline">
       <button type="submit" class="btn btn-outline-primary btn-sm">Generate All QRs</button>
     </form>
-    <a href="{{ url_for('qr_assistants_pdf') }}" class="btn btn-outline-secondary btn-sm">Print Assistant QRs (Avery 8163)</a>
+    <a href="{{ url_for('qr_assistants_pdf') }}" class="btn btn-outline-secondary btn-sm">Print Staff QRs (Avery 8163)</a>
   </div>
 
   <table class="table table-sm table-striped align-middle">
@@ -38,7 +38,7 @@
           {% if current_user and current_user.is_admin() %}
           <form method="POST" action="{{ url_for('assistants_delete', aid=a[0]) }}" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete assistant?');">Del</button>
+            <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Delete staff member?');">Del</button>
           </form>
           {% endif %}
         </td>

@@ -44,7 +44,7 @@ function enterFullscreenMode(){
   if(col1) col1.style.display = 'none';
   if(col3) col3.style.display = 'none';
   if(col2){
-    col2.className = 'col-12';
+    col2.className = 'col-12 dashboard-col';
     col2.querySelector('.card').style.height = '100vh';
   }
   
@@ -73,7 +73,7 @@ function exitFullscreenMode(){
   const rightCol = document.getElementById('checkedCol');
   
   if(col1){
-    col1.className = 'col-lg-8 col-md-6 col-6';
+    col1.className = 'col dashboard-col';
     col1.querySelector('.card').style.height = '';
   }
 
@@ -127,37 +127,33 @@ async function fetchDashboardData(){
   }
   const activeIds = seenActive;
   
-  // Determine checked-out students
-  const checkedIds = new Set(
-    (students||[])
-      .filter(st => st.status === 'checked')
-      .map(st => st.id)
-  );
-  
   // Filter lists to ensure exclusivity across columns
+  // Column 1 should show any non-active student (including checked out today)
   const studentsAvailable = (students||[])
-    .filter(st => st.status === 'registered' && !activeIds.has(st.id) && !checkedIds.has(st.id));
+    .filter(st => !activeIds.has(st.id));
   const checkedOnly = (students||[])
     .filter(st => st.status === 'checked' && !activeIds.has(st.id));
+  const daySessionCount = checkedOnly.length + uniqueSessions.length;
 
   buildStudentList(studentsAvailable);
   buildSeatGrid(uniqueSessions);
-  buildCheckedList(checkedOnly);
+  buildCheckedList(checkedOnly, daySessionCount);
   buildAssistantsList(assistants);
 }
-// ---------- Column 2 (Assistants) ----------
+// ---------- Column 2 (Staff) ----------
 function buildAssistantsList(assistants){
-  const section = document.getElementById("assistantsOnDutySection");
   const list = document.getElementById("assistantsDutyList");
   const onDuty = assistants.filter(a => a.on_duty);
   
+  if(!list) return;
+
+  list.innerHTML = "";
+
   if(onDuty.length === 0){
-    section.style.display = "none";
+    list.innerHTML = `<div class="col-12"><small class="text-muted">No staff on duty</small></div>`;
     return;
   }
-  
-  section.style.display = "block";
-  list.innerHTML = "";
+
   onDuty.forEach(a => {
     const div = document.createElement("div");
     div.className = "col-auto";
@@ -191,14 +187,14 @@ function buildAssistantsList(assistants){
     const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     const today = days[new Date().getDay()];
     
-    // Filter registered students
-    const registeredStudents = data.filter(s => s.status === "registered");
+    // Filter non-active students (registered + checked)
+    const availableStudents = data.filter(s => s.status !== "active");
     
     // Separate students into scheduled for today and others
     const scheduledToday = [];
     const others = [];
     
-    registeredStudents.forEach(s => {
+    availableStudents.forEach(s => {
       // Check if scheduled for today
       const isScheduledToday = (s.day1 === today || s.day2 === today);
       
@@ -235,9 +231,13 @@ function buildAssistantsList(assistants){
       if (s.paper_ws) badges.push('P');
       const badgeDisplay = badges.length > 0 ? badges.join(', ') : '-';
       
+      const checkedBadge = s.status === 'checked'
+        ? ' <span class="badge bg-secondary" style="font-size:0.65em;">Checked out</span>'
+        : '';
+
       const nameDisplay = timeDisplay 
-        ? `<b>${s.name}</b> <span class="text-primary">(${timeDisplay})</span>`
-        : `<b>${s.name}</b>`;
+        ? `<b>${s.name}</b>${checkedBadge} <span class="text-primary">(${timeDisplay})</span>`
+        : `<b>${s.name}</b>${checkedBadge}`;
       
       info.innerHTML = `${nameDisplay}<br><small class="text-muted">${badgeDisplay}</small>`;
       div.appendChild(info);
@@ -261,7 +261,7 @@ function buildAssistantsList(assistants){
     });
     
     document.getElementById("registeredCount").innerText=
-      `${registeredStudents.length} students available`;
+      `${availableStudents.length} students available`;
 
 }
 
@@ -299,10 +299,24 @@ function buildSeatGrid(activeSessions){
       card.style.height=seatHeight;
       card.style.display="flex";
       card.style.flexDirection="column";
+
+      // Build photo HTML
+      const photoHtml = s.photo
+        ? `<img src="/static/img/students/${s.photo}" alt="${s.name}" style="width:48px;height:48px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;flex-shrink:0;">`
+        : `<div style="width:48px;height:48px;border-radius:50%;border:2px solid #dee2e6;background:#e9ecef;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="bi bi-person" style="font-size:1.4em;color:#adb5bd;"></i></div>`;
+
+      // Build subjects badges HTML
+      const subjectsList = (s.subjects && s.subjects.length > 0) ? s.subjects : (s.subject ? [s.subject] : []);
+      const subjectsHtml = subjectsList.length > 0
+        ? subjectsList.map(sub => `<span class="badge bg-primary me-1" style="font-size:0.65em;">${sub}</span>`).join('')
+        : '';
+
       card.innerHTML=`
-        <div class="d-flex align-items-start p-2">
-          <div class="flex-grow-1">
-            <div class="fw-semibold" style="font-size:${fontSize}; line-height:1.2;">${s.name}</div>
+        <div class="d-flex align-items-center gap-2 p-2">
+          ${photoHtml}
+          <div class="flex-grow-1 overflow-hidden">
+            <div class="fw-semibold text-truncate" style="font-size:${fontSize}; line-height:1.2;">${s.name}</div>
+            ${subjectsHtml ? `<div class="mt-1">${subjectsHtml}</div>` : ''}
           </div>
         </div>
         <div class="flex-grow-1 d-flex align-items-center justify-content-center">
@@ -401,7 +415,7 @@ function buildSeatGrid(activeSessions){
 }
 
 // ---------- Column 3 ----------
-function buildCheckedList(data){
+function buildCheckedList(data, daySessionCount){
   const checked=data.filter(s=>s.status==="checked");
   const ul=document.getElementById("checkedList"); ul.innerHTML="";
     checked.forEach(s=>{
@@ -416,6 +430,8 @@ function buildCheckedList(data){
   });
   document.getElementById("checkedCount").innerText=
     `${checked.length} students checked out today`;
+  document.getElementById("daySessionCount").innerText=
+    `${daySessionCount} students were in session today`;
 }
 
 fetchDashboardData();
@@ -443,9 +459,9 @@ function checkIdleState(){
 
 function enterFullscreenMode(){
   isFullscreenMode = true;
-  const col1 = document.querySelectorAll('.col-lg-2')[0];
-  const col2 = document.querySelector('.col-lg-8');
-  const col3 = document.querySelectorAll('.col-lg-2')[1];
+  const col1 = document.getElementById('studentsCol');
+  const col2 = document.getElementById('activeCol');
+  const col3 = document.getElementById('checkedCol');
   
   if(col1) col1.style.display = 'none';
   if(col3) col3.style.display = 'none';
@@ -463,15 +479,14 @@ function exitFullscreenMode(){
   if(!isFullscreenMode) return;
   isFullscreenMode = false;
   
-  const col1 = document.querySelectorAll('.col-lg-2')[0];
-  const col2 = document.querySelector('.col-12');
-  const col3 = document.querySelectorAll('.col-lg-2')[1];
+  const col1 = document.getElementById('studentsCol');
+  const col2 = document.getElementById('activeCol');
+  const col3 = document.getElementById('checkedCol');
   
   if(col1) col1.style.display = '';
   if(col3) col3.style.display = '';
   if(col2){
-    col2.classList.remove('col-12');
-    col2.classList.add('col-lg-8', 'col-md-6');
+    col2.className = 'col dashboard-col';
     const card = col2.querySelector('.card');
     if(card) card.style.height = '';
   }
@@ -707,12 +722,12 @@ resetIdleTimer();
         const res = await fetch('/api/assistants/list', {cache:'no-store'});
         const list = await res.json();
         const a = list.find(x=>x.id===aid);
-        return a ? a.name : `Assistant ${aid}`;
-      }catch{ return `Assistant ${aid}`; }
+        return a ? a.name : `Staff ${aid}`;
+      }catch{ return `Staff ${aid}`; }
     }
 
     if(type === 'ASST'){
-      // Toggle assistant on/off duty
+      // Toggle staff on/off duty
       try{
         const res = await fetch(`/api/assistants/select/${ident}`, {method:'POST'});
         const j = await res.json().catch(()=>({}));
@@ -724,15 +739,15 @@ resetIdleTimer();
           const action = j.on_duty ? 'On Duty' : 'Off Duty';
           showQuickToast(`${name} — ${action}`);
           logDebug(`ASST OK id=${ident} action=${action}`);
-          // Refresh navbar assistant list to update checkmark
+          // Refresh navbar staff list to update checkmark
           if (typeof loadAssistants === 'function') {
             loadAssistants();
           }
         }
         fetchDashboardData();
       }catch(err){
-        console.error('[dashboard] assistant toggle error', err);
-        showQuickToast('Error toggling assistant '+ident, true);
+        console.error('[dashboard] staff toggle error', err);
+        showQuickToast('Error toggling staff '+ident, true);
         logDebug(`ASST ERROR id=${ident} msg=${err.message}`);
       }
       return; // done
