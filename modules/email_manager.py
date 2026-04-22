@@ -71,7 +71,7 @@ class EmailManager:
                 # Prevent auto-replies from mail servers
                 message['Precedence'] = 'bulk'
                 # Hide unsubscribe option (professional approach)
-                message['List-Unsubscribe'] = '<mailto:noreply@Stdytime.local>'
+                message['List-Unsubscribe'] = '<mailto:noreply@stdytime.com>'
             
             # Attach plain text body
             part1 = MIMEText(body, 'plain')
