@@ -1,5 +1,5 @@
 ﻿<!-- templates/navbar.html -->
-<nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#0d6efd; font-weight:600;">
+<nav class="navbar navbar-expand-lg navbar-dark" style="background-color:#2e7d32; font-weight:600;">
   <div class="container-fluid">
 
     <!-- Brand -->
@@ -41,56 +41,41 @@
         </li>
         {% endif %}
 
-        <!-- Staff -->
-        {% if subscription_access.can_access_assistants %}
+        
+
+        <!-- Reports -->
+        {% if subscription_access.can_access_instructor_reports %}
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle text-white" href="#" id="assistMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-badge"></i> Staff on Duty</a>
-          <ul class="dropdown-menu" id="assistantsList">
-            <li><a class="dropdown-item disabled text-muted" href="#">Loading staff...</a></li>
+          <a class="nav-link dropdown-toggle text-white" href="#" id="reportsMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-bar-chart-line"></i> Reports</a>
+          <ul class="dropdown-menu" aria-labelledby="reportsMenu">
+            <li><a class="dropdown-item" href="{{ url_for('reports_assistants') }}">Payroll Staff Hours</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('class_attendance_page') }}">Class Attendance</a></li>
+            <li><a class="dropdown-item" href="{{ url_for('student_attendance_page') }}">Student Attendance</a></li>
           </ul>
         </li>
         {% endif %}
 
-        
-
-<!-- Instructor with dropdown submenu -->
+<!-- Utilities menu -->
 {% if subscription_access.can_access_instructor_profile %}
 <li class="nav-item dropdown">
-  <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-person-workspace"></i> Instructor</a>
+  <a class="nav-link dropdown-toggle text-white" href="#" id="instMenu" role="button" data-bs-toggle="dropdown"><i class="bi bi-tools"></i> Utilities</a>
   <ul class="dropdown-menu" aria-labelledby="instMenu">
-    <li><a class="dropdown-item" href="{{ url_for('instructor_profile') }}">Profile</a></li>
-    <li><a class="dropdown-item" href="{{ url_for('center_calendar') }}"><i class="bi bi-calendar-week"></i> Center Calendar</a></li>
-    {% if subscription_access.can_access_instructor_reports or subscription_access.can_access_assistants or subscription_access.can_access_instructor_settings %}
-    <li><hr class="dropdown-divider"></li>
-    {% endif %}
-    {% if subscription_access.can_access_instructor_reports %}
+    <li><a class="dropdown-item" href="{{ url_for('instructor_profile') }}">Center Profile</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('center_calendar') }}"><i class="bi bi-calendar-week"></i> Students Calendar</a></li>
+    {% if subscription_access.can_access_assistants %}
     <li class="dropdown-submenu">
-      <a class="dropdown-item" href="#" role="button">Reports</a>
-      <ul class="dropdown-menu">
-        <li><a class="dropdown-item" href="{{ url_for('reports_assistants') }}">Payroll Staff Hours</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('class_attendance_page') }}">Class Attendance</a></li>
-        <li><a class="dropdown-item" href="{{ url_for('student_attendance_page') }}">Student Attendance</a></li>
+      <a class="dropdown-item" href="#" id="utilAssistMenu">
+        <i class="bi bi-person-badge"></i> Staff on Duty
+      </a>
+      <ul class="dropdown-menu" id="assistantsList">
+        <li><a class="dropdown-item disabled text-muted" href="#">Loading staff...</a></li>
       </ul>
     </li>
-    {% endif %}
-    {% if subscription_access.can_access_assistants %}
     <li><a class="dropdown-item" href="{{ url_for('assistants_list') }}">Manage Staff</a></li>
-    <li><a class="dropdown-item" href="{{ url_for('schedule_assistants') }}">Schedule Staff</a></li>
+    <li><a class="dropdown-item" href="{{ url_for('schedule_assistants') }}">Staff Calendar</a></li>
     {% endif %}
     {% if subscription_access.can_access_instructor_settings %}
-    <li class="dropdown-submenu">
-      <a class="dropdown-item" href="#" role="button">Settings</a>
-      <ul class="dropdown-menu">
-        <li class="dropdown-submenu">
-          <a class="dropdown-item" href="#" role="button">QR Code</a>
-          <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="{{ url_for('qr_print_page') }}" onclick="event.stopPropagation();">Print</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('qr_scanner') }}" onclick="event.stopPropagation();">Scanner</a></li>
-          </ul>
-        </li>
-        
-      </ul>
-    </li>
+    <li><a class="dropdown-item" href="{{ url_for('qr_scanner') }}"><i class="bi bi-qr-code-scan"></i> Scanner</a></li>
     {% endif %}
   </ul>
 </li>

@@ -19,7 +19,7 @@
 </style>
 </head>
 <body>
-{% include "navbar.html" %}
+{% block topbar %}{% include "navbar.html" %}{% endblock %}
 {% with messages = get_flashed_messages(with_categories=true) %}
   {% if messages %}
     <div class="container mt-2">

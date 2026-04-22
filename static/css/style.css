@@ -243,3 +243,238 @@ img.rounded-circle[src*='default.png'] {
     font-size: 1.4rem !important;
   }
 }
+
+/* ============================================
+   GREEN-YELLOW THEME — Dashboard Layout
+   ============================================ */
+
+/* --- Dashboard Top Bar --- */
+.dash-topbar {
+  display: flex;
+  align-items: center;
+  background: #2e7d32;
+  color: white;
+  height: 52px;
+  padding: 0 0.75rem;
+  gap: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+}
+
+.dash-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  color: white;
+  text-decoration: none;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.dash-brand:hover { color: #fdd835; }
+
+.dash-brand-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.dash-version {
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.dash-duty-center {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.dash-duty-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fdd835;
+  flex-shrink: 0;
+}
+
+/* Staff cards inside top bar */
+.dash-topbar #assistantsDutyList .card {
+  background: rgba(255,255,255,0.15) !important;
+  border-color: rgba(255,255,255,0.35) !important;
+  min-width: 90px;
+  padding: 0.2rem 0.4rem !important;
+}
+.dash-topbar #assistantsDutyList .fw-bold,
+.dash-topbar #assistantsDutyList .text-dark {
+  color: white !important;
+}
+.dash-topbar #assistantsDutyList .text-muted {
+  color: rgba(255,255,255,0.7) !important;
+}
+.dash-topbar #assistantsDutyList .timer-assist {
+  color: #fdd835 !important;
+}
+
+.dash-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.dash-icon-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  padding: 0.3rem 0.45rem;
+  cursor: pointer;
+  border-radius: 6px;
+  line-height: 1;
+  position: relative;
+  transition: background 0.15s;
+}
+.dash-icon-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fdd835;
+}
+
+/* Checked-out drawer (now in top bar) */
+.staff-duty-panel-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.checked-drawer-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(320px, calc(100vw - 1.5rem));
+  max-height: min(70vh, 520px);
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 0.65rem;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 200;
+}
+
+.staff-duty-panel-wrap:focus-within .checked-drawer-panel,
+#checkedDrawerButton:hover + .checked-drawer-panel,
+#checkedDrawerPanel:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* --- Dashboard 3-column Layout --- */
+.dash-layout {
+  display: flex;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+
+/* Left icon sidebar */
+.dash-sidebar {
+  width: 56px;
+  flex: 0 0 56px;
+  background: #1b5e20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.5rem;
+  gap: 0.2rem;
+  overflow: hidden;
+}
+
+.dash-sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  color: rgba(255,255,255,0.7);
+  text-decoration: none;
+  font-size: 1.3rem;
+  transition: background 0.15s, color 0.15s;
+}
+.dash-sidebar-item:hover,
+.dash-sidebar-item.active {
+  background: rgba(255,255,255,0.18);
+  color: #fdd835;
+}
+
+.dash-sidebar-spacer { flex: 1; }
+
+.dash-sidebar-user {
+  cursor: default;
+  margin-bottom: 0.5rem;
+  font-size: 1.35rem;
+}
+
+/* Override Bootstrap col classes for dash-layout children */
+.dash-layout #studentsCol {
+  flex: 0 0 240px;
+  width: 240px;
+  max-width: 240px;
+  padding: 0.5rem 0.25rem 0.5rem 0.5rem;
+  border-right: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+
+.dash-layout #activeCol {
+  flex: 1 1 auto;
+  width: auto;
+  max-width: none;
+  padding: 0.5rem 0.5rem 0.5rem 0.25rem;
+  overflow: hidden;
+}
+
+/* Green card accents */
+.dash-layout .card {
+  border-top: 3px solid #4caf50;
+}
+
+/* Green heading overrides */
+.dash-layout #studentsCol h6 {
+  color: #2e7d32 !important;
+}
+
+/* --- Offcanvas nav styles --- */
+.offcanvas-section-header {
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 1rem;
+}
+
+.offcanvas-link {
+  color: #1b5e20;
+  text-decoration: none;
+  display: block;
+  font-weight: 500;
+}
+.offcanvas-link:hover { color: #4caf50; }
+
+/* --- Global green theme for non-dashboard navbar --- */
+/* (applied via navbar.html inline style change) */
+
+/* Student photo border: green */
+img.rounded-circle {
+  border-color: #4caf50 !important;
+}
+

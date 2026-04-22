@@ -2,41 +2,6 @@
 <div id="activeCol" class="col dashboard-col">
   <div class="card shadow-sm h-100">
     <div class="card-body d-flex flex-column overflow-hidden" style="padding:0.5rem;">
-      <div id="assistantsOnDutySection" class="staff-duty-bar mb-2">
-        <div class="d-flex align-items-start justify-content-between gap-2">
-          <div class="flex-grow-1">
-            <h6 class="text-info fw-bold mb-1" style="font-size:0.9em;">
-              <i class="bi bi-person-badge"></i> Staff on Duty
-            </h6>
-            <div id="assistantsDutyList" class="row g-1 mb-0">
-              <!-- Populated by JavaScript -->
-            </div>
-          </div>
-
-          <div class="staff-duty-panel-wrap">
-            <button
-              id="checkedDrawerButton"
-              type="button"
-              class="btn btn-sm btn-outline-secondary"
-              aria-label="Show checked out students"
-              title="Hover to view checked out students"
-            >
-              <i class="bi bi-list"></i>
-            </button>
-
-            <div id="checkedDrawerPanel" class="checked-drawer-panel">
-              <h6 class="text-danger fw-bold mb-1">
-                <i class="bi bi-box-arrow-right"></i> Checked Out
-              </h6>
-              <p class="small text-muted mb-1" id="checkedCount"></p>
-              <p class="small text-primary mb-2" id="daySessionCount"></p>
-              <ul id="checkedList"
-                  class="list-group list-group-flush overflow-auto"
-                  style="max-height:65vh; overflow-y:auto;"></ul>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Active Students Section -->
       <h6 class="text-success fw-bold mb-1" style="margin:0 0 0.5rem 0;">
@@ -52,54 +17,3 @@
     </div>
   </div>
 </div>
-
-<style>
-  .staff-duty-bar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    background: #fff;
-    border-bottom: 1px solid #e9ecef;
-    padding-bottom: 0.35rem;
-  }
-
-  .staff-duty-panel-wrap {
-    position: relative;
-    flex: 0 0 auto;
-  }
-
-  #checkedDrawerButton {
-    position: relative;
-    z-index: 3;
-    border-radius: 8px;
-  }
-
-  .checked-drawer-panel {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: min(320px, calc(100vw - 1.5rem));
-    max-height: min(70vh, 520px);
-    overflow: hidden;
-    background: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.14);
-    padding: 0.65rem;
-    opacity: 0;
-    transform: translateY(-4px);
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.15s ease, transform 0.15s ease;
-    z-index: 20;
-  }
-
-  .staff-duty-panel-wrap:focus-within .checked-drawer-panel,
-  #checkedDrawerButton:hover + .checked-drawer-panel,
-  #checkedDrawerPanel:hover {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
-    pointer-events: auto;
-  }
-</style>
