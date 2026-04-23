@@ -2,7 +2,7 @@
 from flask import jsonify, request
 from modules import student_manager, assistant_manager, timer_manager, auth_manager
 from modules import server_cache
-from modules.email_manager import get_email_manager
+from modules.email_manager import get_email_manager, render_branded_email_shell, resolve_center_name
 from modules import instructor_profile_manager
 from modules.database import DB_PATH
 from modules.utils import duration_seconds, time_now
@@ -91,8 +91,7 @@ def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user
         seconds = total_seconds % 60
         duration_display = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-        profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
-        center_name = (profile.get('center_location') if profile else None) or 'Stdytime'
+        center_name = resolve_center_name(owner_user_id=owner_user_id)
 
         email_subject = f"Class Checkout - {student_name}"
 
@@ -106,39 +105,23 @@ def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user
             f"This is an automated message. Please do not reply."
         )
 
-        html_body = f"""
-<html>
-<head>
-  <style>
-    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-    .header {{ background-color: #0d6efd; color: white; padding: 20px; text-align: center; }}
-    .content {{ padding: 20px; }}
-    .report-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-    .report-table th, .report-table td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-    .report-table th {{ background-color: #e9ecef; font-weight: bold; width: 50%; }}
-    .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }}
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h2>Class Checkout Confirmation</h2>
-    <p>{center_name}</p>
-  </div>
-  <div class="content">
-    <p>Dear Parent/Guardian,</p>
-    <p><strong>{student_name}</strong> has checked out from class.</p>
-    <table class="report-table">
-      <tr><th>Start Time</th><td>{start_display}</td></tr>
-      <tr><th>End Time</th><td>{end_display}</td></tr>
-      <tr><th>Session Duration</th><td>{duration_display}</td></tr>
-    </table>
-    <div class="footer">
-      <p>This is an automated message from {center_name}. Please do not reply.</p>
-    </div>
-  </div>
-</body>
-</html>
-"""
+        html_body = render_branded_email_shell(
+            title="Class Checkout Confirmation",
+            center_name=center_name,
+            subtitle=center_name,
+            footer_note=f"This is an automated checkout message from {center_name}. Please do not reply to this email.",
+            owner_user_id=owner_user_id,
+            body_html=f"""
+                <p>Dear Parent/Guardian,</p>
+                <div class="highlight"><strong>{student_name}</strong> has checked out from class.</div>
+                <table class="report-table">
+                    <tr><th>Start Time</th><td>{start_display}</td></tr>
+                    <tr><th>End Time</th><td>{end_display}</td></tr>
+                    <tr><th>Session Duration</th><td>{duration_display}</td></tr>
+                    <tr><th>Center</th><td>{center_name}</td></tr>
+                </table>
+            """
+        )
 
         # Use the same email_manager pattern as utilities/report-card/send-email
         email_manager = get_email_manager()

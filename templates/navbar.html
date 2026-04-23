@@ -6,6 +6,9 @@
     <a class="navbar-brand fw-bold" style="color:white;" href="{{ url_for(subscription_access.default_home_endpoint) }}">
       <i class="bi bi-clock-history me-1"></i> Stdytime
     </a>
+    {% if branding_center_name and branding_center_name != 'Stdytime' %}
+    <span class="navbar-center-label">{{ branding_center_name }}</span>
+    {% endif %}
     <span class="text-white-50 small">Version {{ app_version }}</span>
 
     <!-- Toggler -->

@@ -9,6 +9,9 @@
   <a class="dash-brand" href="{{ url_for(subscription_access.default_home_endpoint) }}">
     <i class="bi bi-clock-history"></i>
     <span class="dash-brand-name">StdyTime</span>
+    {% if branding_center_name and branding_center_name != 'Stdytime' %}
+    <span class="dash-center-name">{{ branding_center_name }}</span>
+    {% endif %}
     <span class="dash-version">v{{ app_version }}</span>
   </a>
 
@@ -47,7 +50,7 @@
 
 <!-- Offcanvas full navigation -->
 <div class="offcanvas offcanvas-end" tabindex="-1" id="dashNav" aria-labelledby="dashNavLabel">
-  <div class="offcanvas-header" style="background:#2e7d32; color:white;">
+  <div class="offcanvas-header" style="background:var(--brand-primary); color:white;">
     <h5 class="offcanvas-title" id="dashNavLabel"><i class="bi bi-clock-history me-1"></i> StdyTime Menu</h5>
     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
   </div>

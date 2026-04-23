@@ -13,6 +13,97 @@ import os
 from typing import Optional, List, Dict
 
 
+BRAND_PRIMARY = '#2e7d32'
+BRAND_PRIMARY_DARK = '#1b5e20'
+BRAND_ACCENT = '#fdd835'
+BRAND_SURFACE = '#f6faf4'
+BRAND_SURFACE_STRONG = '#e8f5e9'
+BRAND_BORDER = '#d7e7d5'
+BRAND_TEXT = '#1f2937'
+BRAND_MUTED = '#667085'
+
+
+def resolve_center_name(owner_user_id: Optional[int] = None, center_name: Optional[str] = None) -> str:
+    """Resolve the center name from the provided value or instructor profile."""
+    if center_name and str(center_name).strip():
+        return str(center_name).strip()
+
+    if owner_user_id:
+        try:
+            from modules import instructor_profile_manager
+
+            profile = instructor_profile_manager.get_instructor_profile(owner_user_id=owner_user_id)
+            value = (profile.get('center_location') if profile else None) or ''
+            if value.strip():
+                return value.strip()
+        except Exception:
+            pass
+
+    return 'Stdytime'
+
+
+def render_branded_email_shell(title: str, center_name: Optional[str], body_html: str,
+                               footer_note: Optional[str] = None,
+                               subtitle: Optional[str] = None,
+                               owner_user_id: Optional[int] = None) -> str:
+    """Wrap email body content in the shared Stdytime green/yellow email shell."""
+    safe_center_name = resolve_center_name(owner_user_id=owner_user_id, center_name=center_name)
+
+    if subtitle and str(subtitle).strip():
+        safe_subtitle = str(subtitle).strip()
+    else:
+        safe_subtitle = safe_center_name
+
+    if footer_note and str(footer_note).strip():
+        safe_footer_note = str(footer_note).strip()
+    else:
+        safe_footer_note = f'This is an automated message from {safe_center_name}. Please do not reply to this email.'
+
+    # Replace any stale/hardcoded center name remnants in caller-provided text.
+    for legacy_label in ("KUMON PLANTATION SOUTH", "Kumon Plantation South"):
+        safe_subtitle = safe_subtitle.replace(legacy_label, safe_center_name)
+        safe_footer_note = safe_footer_note.replace(legacy_label, safe_center_name)
+
+    return f"""
+<html>
+<head>
+    <style>
+        body {{ margin: 0; padding: 0; background: {BRAND_SURFACE}; font-family: Arial, sans-serif; color: {BRAND_TEXT}; }}
+        .shell {{ width: 100%; padding: 24px 12px; box-sizing: border-box; }}
+        .card {{ max-width: 680px; margin: 0 auto; background: #ffffff; border: 1px solid {BRAND_BORDER}; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 24px rgba(27, 94, 32, 0.12); }}
+        .header {{ background: linear-gradient(135deg, {BRAND_PRIMARY_DARK} 0%, {BRAND_PRIMARY} 65%, #4caf50 100%); color: white; padding: 24px; text-align: center; }}
+        .header h2 {{ margin: 0; font-size: 24px; font-weight: 700; }}
+        .header p {{ margin: 8px 0 0; color: {BRAND_ACCENT}; font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }}
+        .content {{ padding: 24px; }}
+        .highlight {{ margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; background: #fff8cf; border: 1px solid #f5de72; color: {BRAND_PRIMARY_DARK}; font-weight: 600; }}
+        .report-table {{ width: 100%; border-collapse: collapse; margin-top: 18px; overflow: hidden; border-radius: 10px; }}
+        .report-table th, .report-table td {{ border: 1px solid {BRAND_BORDER}; padding: 12px; text-align: left; }}
+        .report-table th {{ background: {BRAND_SURFACE_STRONG}; color: {BRAND_PRIMARY_DARK}; font-weight: 700; width: 42%; }}
+        .footer {{ margin-top: 28px; padding-top: 18px; border-top: 1px solid {BRAND_BORDER}; color: {BRAND_MUTED}; font-size: 12px; line-height: 1.6; }}
+        .footer strong {{ color: {BRAND_PRIMARY_DARK}; }}
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <div class="card">
+            <div class="header">
+                <h2>{title}</h2>
+                <p>{safe_subtitle}</p>
+            </div>
+            <div class="content">
+                {body_html}
+                <div class="footer">
+                    <p><strong>{safe_center_name}</strong></p>
+                    <p>{safe_footer_note}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+
 class EmailManager:
     """Manages email sending operations"""
     
@@ -135,8 +226,10 @@ class EmailManager:
                 'error': f'Error sending email: {str(e)}'
             }
     
-    def send_report_card(self, student_name: str, recipient_email: str, 
-                        report_data: Dict[str, any]) -> Dict[str, any]:
+    def send_report_card(self, student_name: str, recipient_email: str,
+                        report_data: Dict[str, any],
+                        center_name: Optional[str] = None,
+                        owner_user_id: Optional[int] = None) -> Dict[str, any]:
         """
         Send student report card via email
         
@@ -149,6 +242,7 @@ class EmailManager:
             Dictionary with 'success' status and 'message' or 'error'
         """
         subject = f"Student Report Card - {student_name}"
+        center_name = resolve_center_name(owner_user_id=owner_user_id, center_name=center_name)
         
         # Create plain text body
         body = f"""
@@ -169,77 +263,53 @@ Cumulative Study Time: {report_data.get('cum_study_time', 'N/A')}
 Current Subject Status: {report_data.get('current_subject_status', 'N/A')}
 
 Best regards,
-Stdytime Academic Management System
+{center_name}
 """
         
         # Create HTML body
-        html_body = f"""
-<html>
-<head>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .header {{ background-color: #0d6efd; color: white; padding: 20px; text-align: center; }}
-        .content {{ padding: 20px; }}
-        .report-table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        .report-table th, .report-table td {{ 
-            border: 1px solid #ddd; padding: 12px; text-align: left; 
-        }}
-        .report-table th {{ background-color: #f2f2f2; font-weight: bold; }}
-        .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; 
-                   color: #666; font-size: 12px; }}
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h2>🎓 Student Report Card</h2>
-        <p>Stdytime Academic Management System</p>
-    </div>
-    <div class="content">
-        <p>Dear Parent/Guardian,</p>
-        <p>Please find below the report card for <strong>{student_name}</strong>.</p>
-        <div style="padding:10px; background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; color:#856404; margin-bottom:15px;">
-            <strong>Do not reply:</strong> This mailbox is not monitored.
-        </div>
-        
-        <table class="report-table">
-            <tr>
-                <th>Subject</th>
-                <td>{report_data.get('subject', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Report Date Range</th>
-                <td>{report_data.get('start_date', 'N/A')} to {report_data.get('end_date', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Highest Worksheet Completed</th>
-                <td>{report_data.get('highest_ws_completed', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Number of Worksheets</th>
-                <td>{report_data.get('num_ws', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Study Days</th>
-                <td>{report_data.get('study_days', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Cumulative Study Time</th>
-                <td>{report_data.get('cum_study_time', 'N/A')}</td>
-            </tr>
-            <tr>
-                <th>Current Subject Status</th>
-                <td>{report_data.get('current_subject_status', 'N/A')}</td>
-            </tr>
-        </table>
-        
-        <div class="footer">
-            <p>This is an automated message from Stdytime Academic Management System. Please do not reply to this email.</p>
-            <p>For any questions, please contact your institution.</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
+        html_body = render_branded_email_shell(
+            title="🎓 Student Report Card",
+            center_name=center_name,
+            subtitle=center_name,
+            footer_note=f"This is an automated message from {center_name}. Please do not reply to this email.",
+            owner_user_id=owner_user_id,
+            body_html=f"""
+                <p>Dear Parent/Guardian,</p>
+                <p>Please find below the report card for <strong>{student_name}</strong>.</p>
+                <div class="highlight"><strong>Do not reply:</strong> This mailbox is not monitored.</div>
+                <table class="report-table">
+                    <tr>
+                        <th>Subject</th>
+                        <td>{report_data.get('subject', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Report Date Range</th>
+                        <td>{report_data.get('start_date', 'N/A')} to {report_data.get('end_date', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Highest Worksheet Completed</th>
+                        <td>{report_data.get('highest_ws_completed', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Number of Worksheets</th>
+                        <td>{report_data.get('num_ws', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Study Days</th>
+                        <td>{report_data.get('study_days', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Cumulative Study Time</th>
+                        <td>{report_data.get('cum_study_time', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Current Subject Status</th>
+                        <td>{report_data.get('current_subject_status', 'N/A')}</td>
+                    </tr>
+                </table>
+                <p style="margin-top:16px; color:{BRAND_MUTED};">For any questions, please contact your institution.</p>
+            """
+        )
         
         # Send as no-reply (prevents recipients from replying)
         return self.send_email(recipient_email, subject, body, html_body, no_reply=True)

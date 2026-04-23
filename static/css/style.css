@@ -2,11 +2,130 @@
    Stdytime Custom Styles
    ============================================ */
 
+:root {
+  --brand-primary: #2e7d32;
+  --brand-primary-dark: #1b5e20;
+  --brand-primary-rgb: 46, 125, 50;
+  --brand-accent: #fdd835;
+  --brand-accent-soft: #fff8cf;
+  --brand-surface: #f6faf4;
+  --brand-surface-strong: #e8f5e9;
+  --brand-border: #d7e7d5;
+  --brand-text: #1f2937;
+  --brand-muted: #667085;
+  --bs-primary: var(--brand-primary);
+  --bs-primary-rgb: var(--brand-primary-rgb);
+  --bs-link-color: var(--brand-primary);
+  --bs-link-hover-color: var(--brand-primary-dark);
+}
+
 /* Prevent horizontal scrollbar */
 body {
   overflow-x: hidden;
   margin: 0;
   padding: 0;
+  background: var(--brand-surface);
+  color: var(--brand-text);
+}
+
+a {
+  color: var(--brand-primary);
+}
+
+a:hover {
+  color: var(--brand-primary-dark);
+}
+
+.auth-themed {
+  background: linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 55%, #7cb342 100%) !important;
+}
+
+.text-primary {
+  color: var(--brand-primary) !important;
+}
+
+.bg-primary,
+.badge.bg-primary,
+.progress-bar.bg-primary {
+  background-color: var(--brand-primary) !important;
+}
+
+.btn-primary,
+.brand-card-header,
+.card-header.bg-primary {
+  background: linear-gradient(135deg, var(--brand-primary-dark) 0%, var(--brand-primary) 70%, #4caf50 100%) !important;
+  border-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+  background: linear-gradient(135deg, #174d1a 0%, #256b2b 70%, #449d48 100%) !important;
+  border-color: var(--brand-primary-dark) !important;
+  color: #fff !important;
+}
+
+.btn-outline-primary {
+  color: var(--brand-primary) !important;
+  border-color: var(--brand-primary) !important;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus,
+.btn-outline-primary:active {
+  background: var(--brand-primary) !important;
+  border-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+.table-primary {
+  --bs-table-bg: var(--brand-surface-strong) !important;
+  --bs-table-striped-bg: #dff0de !important;
+  --bs-table-active-bg: #d6ead3 !important;
+  --bs-table-hover-bg: #e8f5e9 !important;
+  --bs-table-color: var(--brand-primary-dark) !important;
+}
+
+.form-control,
+.form-select,
+.input-group-text {
+  border-color: var(--brand-border);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 0.2rem rgba(var(--brand-primary-rgb), 0.18);
+}
+
+.card {
+  border: 1px solid var(--brand-border);
+  box-shadow: 0 8px 20px rgba(27, 94, 32, 0.08);
+}
+
+.alert-info {
+  background: #eef8ea;
+  border-color: #cfe7c8;
+  color: var(--brand-primary-dark);
+}
+
+.navbar-center-label {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin-right: 0.75rem;
+  white-space: nowrap;
+}
+
+.dash-center-name {
+  font-size: 0.78rem;
+  color: var(--brand-accent);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .dashboard-screen-container {
@@ -125,7 +244,7 @@ body {
 /* Student Photos */
 img.rounded-circle {
   object-fit: cover;
-  border: 2px solid #0d6efd;
+  border: 2px solid var(--brand-primary);
 }
 
 img.rounded-circle[src*='default.png'] {

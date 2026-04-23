@@ -22,6 +22,7 @@ load_dotenv()
 
 from modules.database import init_db, DB_PATH
 from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager
+from modules import instructor_profile_manager
 from modules import server_cache
 from modules.utils import format_hhmm
 from modules.rate_limiter import limiter
@@ -213,6 +214,27 @@ def inject_subscription_access():
 def inject_app_version():
     """Inject app version from VERSION file into all templates."""
     return dict(app_version=_ensure_version_up_to_date())
+
+
+@app.context_processor
+def inject_branding():
+    """Inject profile-based branding and shared theme values into templates."""
+    current_user = g.get('current_user')
+    profile = None
+    if current_user:
+        try:
+            profile = instructor_profile_manager.get_instructor_profile(owner_user_id=current_user.id)
+        except Exception:
+            profile = None
+
+    center_name = (profile.get('center_location') if profile else None) or 'Stdytime'
+    return dict(
+        branding_profile=profile,
+        branding_center_name=center_name,
+        brand_primary='#2e7d32',
+        brand_primary_dark='#1b5e20',
+        brand_accent='#fdd835',
+    )
 
 
 def _bump_patch_version(version):
