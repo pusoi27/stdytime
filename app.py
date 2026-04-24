@@ -58,7 +58,15 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # CSRF token valid for 1 hour
 
 # Initialize / verify sqlite DB
-init_db()
+try:
+    init_db()
+    print(f"[startup] Database initialized at: {DB_PATH}")
+except Exception as db_init_error:
+    print(
+        f"[startup] FATAL: Database initialization failed for DB_PATH='{DB_PATH}': {db_init_error}",
+        file=sys.stderr,
+    )
+    raise
 
 # Security extensions
 csrf = CSRFProtect(app)
@@ -365,6 +373,12 @@ def qr_scanner():
 def api_csrf_token():
     """Return a fresh CSRF token for AJAX retry flows."""
     return jsonify({'csrf_token': generate_csrf()})
+
+
+@app.route('/healthz')
+def healthz():
+    """Health check endpoint for Render and uptime monitoring."""
+    return jsonify({'status': 'ok'}), 200
 
 # Register auth routes FIRST (needed for login)
 register_auth_routes(app)

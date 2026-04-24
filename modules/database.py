@@ -2,11 +2,56 @@
 #database.py   ver 04--
 #*****************************
 
-import sqlite3, os
+import sqlite3, os, sys
 from datetime import datetime
 
 DATA_DIR = os.getenv("DATA_DIR", "data")
-DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "Stdytime.db"))
+LOCAL_FALLBACK_DB_PATH = os.path.join("data", "Stdytime.db")
+
+
+def _can_use_db_parent(path):
+    """Return (is_usable, reason)."""
+    parent = os.path.dirname(path) or "."
+    try:
+        os.makedirs(parent, exist_ok=True)
+    except Exception as exc:
+        return False, str(exc)
+
+    probe_path = os.path.join(parent, ".stdytime_db_write_probe")
+    try:
+        with open(probe_path, "w", encoding="utf-8") as probe:
+            probe.write("ok")
+        os.remove(probe_path)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _resolve_db_path():
+    preferred = os.getenv("DB_PATH", os.path.join(DATA_DIR, "Stdytime.db"))
+    is_usable, reason = _can_use_db_parent(preferred)
+    if is_usable:
+        return preferred
+
+    normalized = preferred.replace("\\", "/")
+    if normalized.startswith("/var/data"):
+        fallback_usable, fallback_reason = _can_use_db_parent(LOCAL_FALLBACK_DB_PATH)
+        if fallback_usable:
+            print(
+                f"[startup] WARNING: DB_PATH '{preferred}' is unavailable ({reason}). "
+                f"Falling back to '{LOCAL_FALLBACK_DB_PATH}'. "
+                "Attach a Render persistent disk mounted at /var/data for durable storage.",
+                file=sys.stderr,
+            )
+            return LOCAL_FALLBACK_DB_PATH
+        raise RuntimeError(
+            f"DB_PATH '{preferred}' unavailable ({reason}); fallback '{LOCAL_FALLBACK_DB_PATH}' also unavailable ({fallback_reason})"
+        )
+
+    raise RuntimeError(f"DB_PATH '{preferred}' is unavailable: {reason}")
+
+
+DB_PATH = _resolve_db_path()
 
 def init_db():
     db_parent = os.path.dirname(DB_PATH)
