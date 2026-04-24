@@ -532,4 +532,9 @@ atexit.register(print_profiler_summary)
 #  Run app
 # ================================================================
 if __name__ == "__main__":
-    app.run(debug=not IS_PRODUCTION, use_reloader=False)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "10000")),
+        debug=not IS_PRODUCTION,
+        use_reloader=False,
+    )
