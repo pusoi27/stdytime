@@ -7,6 +7,25 @@ import math
 import json
 
 
+TIMEZONE_OPTIONS = [
+    "UTC-10 (Honolulu)",
+    "UTC-9 (Anchorage)",
+    "UTC-8 (Los Angeles)",
+    "UTC-7 (Denver)",
+    "UTC-6 (Chicago)",
+    "UTC-5 (New York)",
+    "UTC-4 (Santiago)",
+    "UTC+0 (London)",
+    "UTC+1 (Berlin)",
+    "UTC+2 (Athens)",
+    "UTC+3 (Nairobi)",
+    "UTC+5:30 (New Delhi)",
+    "UTC+8 (Singapore)",
+    "UTC+9 (Tokyo)",
+    "UTC+10 (Sydney)",
+]
+
+
 def register_instructor_profile_routes(app):
     """Register instructor profile CRUD routes."""
     
@@ -31,6 +50,7 @@ def register_instructor_profile_routes(app):
             phone = request.form.get("phone", "").strip()
             center_location = request.form.get("center_location", "").strip()
             center_address = request.form.get("center_address", "").strip()
+            center_time_zone = request.form.get("center_time_zone", "").strip()
             center_hours = request.form.get("center_hours", "").strip()
             
             # Collect weekly hours from separate hour and minute dropdowns
@@ -55,7 +75,12 @@ def register_instructor_profile_routes(app):
             
             if not name:
                 flash("Instructor name is required.", "error")
-                return render_template("instructor_profile_form.html", profile=profile, action="Edit" if profile else "Create")
+                return render_template(
+                    "instructor_profile_form.html",
+                    profile=profile,
+                    action="Edit" if profile else "Create",
+                    timezone_options=TIMEZONE_OPTIONS,
+                )
             
             if profile:
                 # Update existing profile
@@ -66,6 +91,7 @@ def register_instructor_profile_routes(app):
                     phone,
                     center_location,
                     center_address,
+                    center_time_zone,
                     center_hours,
                     weekly_hours,
                     owner_user_id=owner_user_id,
@@ -79,6 +105,7 @@ def register_instructor_profile_routes(app):
                     phone,
                     center_location,
                     center_address,
+                    center_time_zone,
                     center_hours,
                     weekly_hours,
                     owner_user_id=owner_user_id,
@@ -88,7 +115,12 @@ def register_instructor_profile_routes(app):
             return redirect(url_for("instructor_profile"))
         
         action = "Edit" if profile else "Create"
-        return render_template("instructor_profile_form.html", profile=profile, action=action)
+        return render_template(
+            "instructor_profile_form.html",
+            profile=profile,
+            action=action,
+            timezone_options=TIMEZONE_OPTIONS,
+        )
 
     @app.route("/api/instructor/profile", methods=["GET"])
     @require_login

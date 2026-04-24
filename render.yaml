@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: stdytime
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: APP_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: true
+      - key: DB_PATH
+        value: /var/data/Stdytime.db
+      - key: ENABLE_PUBLIC_EXIT_ROUTE
+        value: false
+      - key: ENABLE_VERSION_AUTOBUMP
+        value: false
+      - key: SECRET_KEY
+        generateValue: true
+    disks:
+      - name: stdytime-data
+        mountPath: /var/data
+        sizeGB: 5

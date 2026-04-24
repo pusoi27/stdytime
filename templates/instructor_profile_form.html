@@ -78,6 +78,31 @@
                             >
                         </div>
 
+                        <div class="mb-3">
+                            <label for="center_time_zone" class="form-label">Center Time Zone</label>
+                            {% set selected_center_time_zone = profile.center_time_zone if profile else '' %}
+                            <select
+                                class="form-select"
+                                id="center_time_zone"
+                                name="center_time_zone"
+                            >
+                                <option value="">Select a time zone</option>
+                                {% for timezone_option in timezone_options %}
+                                <option
+                                    value="{{ timezone_option }}"
+                                    {% if selected_center_time_zone == timezone_option %}selected{% endif %}
+                                >
+                                    {{ timezone_option }}
+                                </option>
+                                {% endfor %}
+                                {% if selected_center_time_zone and selected_center_time_zone not in timezone_options %}
+                                <option value="{{ selected_center_time_zone }}" selected>
+                                    {{ selected_center_time_zone }} (Current value)
+                                </option>
+                                {% endif %}
+                            </select>
+                        </div>
+
                         <hr class="my-4">
 
                         <!-- Class Hours -->

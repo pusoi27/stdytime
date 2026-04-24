@@ -32,6 +32,11 @@ from modules.rate_limiter import limiter
 # ================================================================
 app = Flask(__name__)
 
+IS_PRODUCTION = (
+    os.getenv('APP_ENV', 'development').lower() == 'production'
+    or os.getenv('RENDER', '').lower() == 'true'
+)
+
 _raw_secret = os.getenv('SECRET_KEY')
 if not _raw_secret:
     _raw_secret = secrets.token_hex(32)
@@ -46,7 +51,8 @@ app.secret_key = _raw_secret
 # Session configuration
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
-app.config['SESSION_COOKIE_SECURE'] = os.getenv('COOKIE_SECURE', 'false').lower() == 'true'
+cookie_secure_default = 'true' if IS_PRODUCTION else 'false'
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('COOKIE_SECURE', cookie_secure_default).lower() == 'true'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # CSRF token valid for 1 hour
@@ -62,7 +68,7 @@ limiter.init_app(app)
 assistant_manager.cleanup_old_payroll_data(months=18)
 
 # Enable cache traces in the terminal for dashboard/column-3 debugging.
-server_cache.DEBUG_CACHE = True
+server_cache.DEBUG_CACHE = os.getenv('DEBUG_CACHE', 'false').lower() == 'true'
 server_cache._logger.setLevel(logging.DEBUG)
 if not server_cache._logger.handlers:
     _cache_handler = logging.StreamHandler()
@@ -406,7 +412,8 @@ def _check_version_on_startup():
     current_version = _ensure_version_up_to_date()
     print(f"[startup] Stdytime version: {current_version}")
 
-_check_version_on_startup()
+if os.getenv('ENABLE_VERSION_AUTOBUMP', 'true').lower() == 'true':
+    _check_version_on_startup()
 
 
 # ================================================================
@@ -466,6 +473,9 @@ def exit_app():
     """Handle application exit/shutdown with graceful browser window closure."""
     import sys
     import threading
+
+    if os.getenv('ENABLE_PUBLIC_EXIT_ROUTE', 'false').lower() != 'true':
+        return render_template("404.html"), 404
     
     print("\n[EXIT] User initiated application shutdown...")
     profiler.print_summary()
@@ -508,4 +518,4 @@ atexit.register(print_profiler_summary)
 #  Run app
 # ================================================================
 if __name__ == "__main__":
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=not IS_PRODUCTION, use_reloader=False)

@@ -5,10 +5,13 @@
 import sqlite3, os
 from datetime import datetime
 
-DB_PATH = os.path.join("data", "Stdytime.db")
+DATA_DIR = os.getenv("DATA_DIR", "data")
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "Stdytime.db"))
 
 def init_db():
-    os.makedirs("data", exist_ok=True)
+    db_parent = os.path.dirname(DB_PATH)
+    if db_parent:
+        os.makedirs(db_parent, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
@@ -106,6 +109,7 @@ def init_db():
             phone TEXT,
             center_location TEXT,
             center_address TEXT,
+            center_time_zone TEXT,
             center_hours TEXT,
             monday_start TEXT, monday_end TEXT,
             tuesday_start TEXT, tuesday_end TEXT,
@@ -189,32 +193,31 @@ def init_db():
         c.execute("INSERT INTO books (title,author,isbn,available,reading_level)"
                   " VALUES (?,?,?,?,?)",
                   ("Mathematics Basics","KumoPress","111222333",1,"5A"))
-    # Ensure super admin user exists with global administrator rights.
-    # Requested credentials:
-    #   Email:    admin@Stdytime
-    #   Password: Stdytime$admin
-    # If the account already exists, it is updated to remain active and admin.
+    # Optional bootstrap admin account driven by environment variables.
+    # This avoids shipping hardcoded default production credentials.
     from werkzeug.security import generate_password_hash
-    super_admin_email = "admin@Stdytime"
-    super_admin_password_hash = generate_password_hash("Stdytime$admin", method='pbkdf2:sha256')
+    bootstrap_admin_email = (os.getenv("BOOTSTRAP_ADMIN_EMAIL") or "").strip()
+    bootstrap_admin_password = (os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
     now = datetime.now().isoformat()
 
-    existing_super_admin = c.execute(
-        "SELECT id FROM users WHERE email = ?",
-        (super_admin_email,)
-    ).fetchone()
+    if bootstrap_admin_email and bootstrap_admin_password:
+        bootstrap_admin_password_hash = generate_password_hash(bootstrap_admin_password, method='pbkdf2:sha256')
+        existing_bootstrap_admin = c.execute(
+            "SELECT id FROM users WHERE email = ?",
+            (bootstrap_admin_email,)
+        ).fetchone()
 
-    if existing_super_admin:
-        c.execute("""
-            UPDATE users
-            SET password_hash = ?, role = 'admin', subscription_tier = 'tier3', is_active = 1, must_change_password = 0, updated_at = ?
-            WHERE email = ?
-        """, (super_admin_password_hash, now, super_admin_email))
-    else:
-        c.execute("""
-            INSERT INTO users (email, password_hash, role, subscription_tier, is_active, must_change_password, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (super_admin_email, super_admin_password_hash, "admin", "tier3", 1, 0, now, now))
+        if existing_bootstrap_admin:
+            c.execute("""
+                UPDATE users
+                SET password_hash = ?, role = 'admin', subscription_tier = 'tier3', is_active = 1, must_change_password = 0, updated_at = ?
+                WHERE email = ?
+            """, (bootstrap_admin_password_hash, now, bootstrap_admin_email))
+        else:
+            c.execute("""
+                INSERT INTO users (email, password_hash, role, subscription_tier, is_active, must_change_password, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (bootstrap_admin_email, bootstrap_admin_password_hash, "admin", "tier3", 1, 0, now, now))
     conn.commit(); conn.close()
 
     # Ensure additional columns exist on students table (migration for additional fields)
@@ -363,6 +366,9 @@ def init_db():
         
         if "center_address" not in cols:
             cur.execute("ALTER TABLE instructor_profile ADD COLUMN center_address TEXT")
+
+        if "center_time_zone" not in cols:
+            cur.execute("ALTER TABLE instructor_profile ADD COLUMN center_time_zone TEXT")
         
         # Add weekly hours columns (start and end time for each day of week)
         days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
