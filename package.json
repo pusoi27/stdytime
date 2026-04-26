@@ -1,0 +1,9 @@
+{
+  "name": "stdytime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Helper Node metadata for repository tooling.",
+  "scripts": {
+    "start": "python app.py"
+  }
+}
