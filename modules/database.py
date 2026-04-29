@@ -201,10 +201,24 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'instructor',
-            subscription_tier TEXT DEFAULT 'tier3',
             is_active INTEGER DEFAULT 1,
             must_change_password INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    # Local machine license state
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS app_license (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            license_key TEXT,
+            licensee TEXT,
+            email TEXT,
+            issued_at TEXT,
+            expires_at TEXT,
+            machine_fingerprint TEXT,
+            metadata_json TEXT DEFAULT '{}',
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -213,9 +227,6 @@ def init_db():
 
     c.execute("PRAGMA table_info(users)")
     user_cols = [r[1] for r in c.fetchall()]
-    if "subscription_tier" not in user_cols:
-        c.execute("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'tier3'")
-        conn.commit()
     if "must_change_password" not in user_cols:
         c.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
         conn.commit()
@@ -255,14 +266,14 @@ def init_db():
         if existing_bootstrap_admin:
             c.execute("""
                 UPDATE users
-                SET password_hash = ?, role = 'admin', subscription_tier = 'tier3', is_active = 1, must_change_password = 0, updated_at = ?
+                SET password_hash = ?, role = 'admin', is_active = 1, must_change_password = 0, updated_at = ?
                 WHERE email = ?
             """, (bootstrap_admin_password_hash, now, bootstrap_admin_email))
         else:
             c.execute("""
-                INSERT INTO users (email, password_hash, role, subscription_tier, is_active, must_change_password, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (bootstrap_admin_email, bootstrap_admin_password_hash, "admin", "tier3", 1, 0, now, now))
+                INSERT INTO users (email, password_hash, role, is_active, must_change_password, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (bootstrap_admin_email, bootstrap_admin_password_hash, "admin", 1, 0, now, now))
     conn.commit(); conn.close()
 
     # Ensure additional columns exist on students table (migration for additional fields)
@@ -348,11 +359,45 @@ def init_db():
         cols = [r[1] for r in cur.fetchall()]
         if "must_change_password" not in cols:
             cur.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
-        if "subscription_tier" not in cols:
-            cur.execute("ALTER TABLE users ADD COLUMN subscription_tier TEXT DEFAULT 'tier3'")
-        cur.execute(
-            "UPDATE users SET subscription_tier = 'tier3' WHERE subscription_tier IS NULL OR TRIM(subscription_tier) = ''"
-        )
+        conn.commit()
+
+    # Ensure app_license table has all expected columns
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(app_license)")
+        cols = [r[1] for r in cur.fetchall()]
+        if not cols:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS app_license (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    license_key TEXT,
+                    licensee TEXT,
+                    email TEXT,
+                    issued_at TEXT,
+                    expires_at TEXT,
+                    machine_fingerprint TEXT,
+                    metadata_json TEXT DEFAULT '{}',
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            cur.execute("PRAGMA table_info(app_license)")
+            cols = [r[1] for r in cur.fetchall()]
+        if "licensee" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN licensee TEXT")
+        if "email" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN email TEXT")
+        if "issued_at" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN issued_at TEXT")
+        if "expires_at" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN expires_at TEXT")
+        if "machine_fingerprint" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN machine_fingerprint TEXT")
+        if "metadata_json" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN metadata_json TEXT DEFAULT '{}' ")
+        if "updated_at" not in cols:
+            cur.execute("ALTER TABLE app_license ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP")
         conn.commit()
 
     # Ensure owner_user_id exists on sessions and assistant_sessions

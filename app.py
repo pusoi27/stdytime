@@ -5,7 +5,7 @@ Stdytime: Student class management system with dashboard, QR codes, and PDF labe
 Features: Student management, session tracking, QR generation, Avery 8160 PDF output, staff duty tracking.
 """
 
-from flask import Flask, render_template, request, send_from_directory, jsonify, session, g
+from flask import Flask, render_template, request, send_from_directory, jsonify, session, g, redirect, url_for
 from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import sqlite3
@@ -21,7 +21,7 @@ import logging
 load_dotenv()
 
 from modules.database import init_db, DB_PATH
-from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager
+from modules import student_manager, timer_manager, qr_generator, assistant_manager, reports, auth_manager, license_manager
 from modules import instructor_profile_manager
 from modules import server_cache
 from modules.utils import format_hhmm
@@ -154,15 +154,38 @@ class RequestProfiler:
 profiler = RequestProfiler()
 
 @app.before_request
-def before_request_auth():
-    """Load current user from session into g object before each request."""
-    g.current_user = None
-    if 'user_id' in session:
-        g.current_user = auth_manager.get_user_by_id(session['user_id'])
-        if not g.current_user or not g.current_user.is_active:
-            # User was deactivated or deleted
-            session.clear()
-            g.current_user = None
+def before_request_license_state():
+    """Load local license state and block access when the installation is unlicensed."""
+    g.license_status = license_manager.get_license_context()
+    g.current_user = license_manager.get_local_user(g.license_status)
+
+    allowed_endpoints = {
+        'static',
+        'license_page',
+        'activate_license',
+        'remove_license',
+        'license_expired',
+        'license_status_api',
+        'api_csrf_token',
+        'healthz',
+        'not_found',
+    }
+
+    if request.endpoint in allowed_endpoints or request.path.startswith('/static/'):
+        return None
+
+    if g.license_status.get('is_valid'):
+        return None
+
+    if request.path.startswith('/api/'):
+        return jsonify({
+            'error': g.license_status.get('message', 'A valid license is required.'),
+            'license_status': g.license_status.get('status', 'unlicensed'),
+            'license_page': url_for('license_page'),
+        }), 403
+
+    target = 'license_expired' if g.license_status.get('status') == 'expired' else 'license_page'
+    return redirect(url_for(target))
 
 @app.before_request
 def before_request_profiler():
@@ -207,21 +230,39 @@ def inject_now():
 
 @app.context_processor
 def inject_current_user():
-    """Inject current user and session data into all templates."""
+    """Inject the single local licensed operator into all templates."""
     return dict(
         current_user=g.get('current_user'),
-        user_session=session
+        user_session={}
     )
 
 
 @app.context_processor
 def inject_subscription_access():
-    """Inject subscription tier access flags into all templates."""
-    current_user = g.get('current_user')
-    context = auth_manager.get_tier_capabilities(
-        current_user.subscription_tier if current_user else auth_manager.TIER_3
-    )
+    """Inject navigation access flags."""
+    license_status = g.get('license_status', {})
+    context = {
+        'can_access_students': True,
+        'can_access_books': True,
+        'can_access_assistants': True,
+        'can_access_kumoclass': True,
+        'can_access_utilities_print': True,
+        'can_send_email': True,
+        'can_access_instructor_profile': True,
+        'can_access_instructor_reports': True,
+        'can_access_instructor_settings': True,
+        'can_access_qr': True,
+        'default_home_endpoint': 'dashboard',
+    }
+    context['is_licensed'] = bool(license_status.get('is_valid'))
+    context['license_status'] = license_status.get('status', 'unlicensed')
     return dict(subscription_access=context)
+
+
+@app.context_processor
+def inject_license_status():
+    """Expose local license metadata to templates."""
+    return dict(license_status=g.get('license_status', license_manager.get_license_context()))
 
 
 @app.context_processor
@@ -349,6 +390,7 @@ def _ensure_version_up_to_date():
 #  Register all route modules
 # ================================================================
 from routes.auth import register_auth_routes
+from routes.license import register_license_routes
 from routes.dashboard import register_dashboard_routes
 from routes.students import register_student_routes
 from routes.assistants import register_assistant_routes
@@ -380,7 +422,10 @@ def healthz():
     """Health check endpoint for Render and uptime monitoring."""
     return jsonify({'status': 'ok'}), 200
 
-# Register auth routes FIRST (needed for login)
+# Register license routes first so activation is always reachable.
+register_license_routes(app)
+
+# Register legacy auth redirects/decorators for backwards compatibility.
 register_auth_routes(app)
 
 register_dashboard_routes(app)

@@ -335,7 +335,7 @@ function buildSeatGrid(activeSessions){
             } else if(j && j.checkout_email_status === 'sent'){
               showCheckoutEmailConfirmation(s.name);
             } else if(j && j.checkout_email_status === 'disabled'){
-              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
+              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable', true);
             } else if(j && j.checkout_email_status === 'no_email'){
               showQuickToast('No email on file', true);
             } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
@@ -394,7 +394,7 @@ function buildSeatGrid(activeSessions){
             } else if(j && j.checkout_email_status === 'sent'){
               showCheckoutEmailConfirmation(s.name);
             } else if(j && j.checkout_email_status === 'disabled'){
-              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
+              showQuickToast(j.checkout_email_message || 'Checkout email is unavailable', true);
             } else if(j && j.checkout_email_status === 'no_email'){
               showQuickToast('No email on file', true);
             } else if(j && (j.checkout_email_status === 'failed' || j.checkout_email_status === 'error')){
@@ -672,7 +672,7 @@ resetIdleTimer();
     let type = null;
     let ident = null;
 
-    // Tier 1: direct clean pattern, e.g., "ID:57" or "ASST:3"
+    // Pass 1: direct clean pattern, e.g., "ID:57" or "ASST:3"
     let m = data.match(/^(ID|ASST|ASSISTANT)\s*[:;=]?\s*(\d+)$/i);
     if(m){
       type = (m[1].toUpperCase()==='ASSISTANT') ? 'ASST' : m[1].toUpperCase();
@@ -680,7 +680,7 @@ resetIdleTimer();
       logDebug(`DIRECT match -> type=${type} id=${ident}`);
     }
 
-    // Tier 2: flexible pattern with noise
+    // Pass 2: flexible pattern with noise
     if(ident == null){
       m = data.match(/(ID|ASST|ASSISTANT)[^\d]*[:+;=]*([0-9]+)/i);
       if(m){
@@ -695,13 +695,13 @@ resetIdleTimer();
       }
     }
 
-    // Tier 3: last digits anywhere (fallback)
+    // Pass 3: last digits anywhere (fallback)
     if(ident == null){
       m = data.match(/(\d{2,6})(?!.*\d)/);
       if(m){ ident = parseInt(deduplicateRepeatingDigits(m[1]),10); type = type || 'ID'; logDebug(`LAST-DIGITS -> type=${type} id=${ident}`); }
     }
 
-    // Tier 4: all digits only -> assume student ID
+    // Pass 4: all digits only -> assume student ID
     if(ident == null){
       const onlyDigits = data.match(/^(\d{1,6})$/);
       if(onlyDigits){ ident = parseInt(deduplicateRepeatingDigits(onlyDigits[1]),10); type = type || 'ID'; logDebug(`ONLY-DIGITS -> type=${type} id=${ident}`); }
@@ -771,7 +771,7 @@ resetIdleTimer();
           if(j.checkout_email_status === 'sent'){
             showCheckoutEmailConfirmation(j.name || ('Student ' + ident));
           } else if(j.checkout_email_status === 'disabled'){
-            showQuickToast(j.checkout_email_message || 'Checkout email is unavailable for this subscription tier', true);
+            showQuickToast(j.checkout_email_message || 'Checkout email is unavailable', true);
           } else if(j.checkout_email_status === 'no_email'){
             showQuickToast('No email on file', true);
           } else if(j.checkout_email_status === 'failed' || j.checkout_email_status === 'error'){

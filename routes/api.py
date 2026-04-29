@@ -1,6 +1,6 @@
 ﻿# routes/api.py
 from flask import jsonify, request
-from modules import student_manager, assistant_manager, timer_manager, auth_manager
+from modules import student_manager, assistant_manager, timer_manager, auth_manager, license_manager
 from modules import server_cache
 from modules.email_manager import get_email_manager, render_branded_email_shell, resolve_center_name
 from modules import instructor_profile_manager
@@ -63,11 +63,6 @@ def _send_checkout_email(student_row, start_time: str, end_time: str, owner_user
     import traceback as _tb
 
     try:
-        current_user = auth_manager.get_user_by_id(owner_user_id)
-        if current_user and not current_user.has_feature(auth_manager.FEATURE_UTILITIES_EMAIL):
-            print(f"[checkout-email] Blocked by subscription tier for owner {owner_user_id}")
-            return {"status": "disabled", "message": "Checkout email is not included in the current subscription tier"}
-
         if not student_row:
             return {"status": "error", "message": "Student not found for checkout email"}
 

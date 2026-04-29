@@ -83,18 +83,9 @@
       <li class="list-group-item"><a href="{{ url_for('qr_scanner') }}" class="offcanvas-link"><i class="bi bi-qr-code-scan me-2"></i>Scanner</a></li>
       {% endif %}
       {% endif %}
-      <li class="list-group-item offcanvas-section-header">Account</li>
-      {% if current_user and current_user.is_admin() %}
-      <li class="list-group-item"><a href="{{ url_for('auth.list_users') }}" class="offcanvas-link"><i class="bi bi-people me-2"></i>Manage Users</a></li>
-      {% endif %}
-      <li class="list-group-item">
-        <form method="POST" action="{{ url_for('auth.logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="offcanvas-link btn btn-link p-0 text-start w-100" style="color:#dc3545;" onclick="return confirm('Log out?')">
-            <i class="bi bi-box-arrow-right me-2"></i>Logout
-          </button>
-        </form>
-      </li>
+      <li class="list-group-item offcanvas-section-header">License</li>
+      <li class="list-group-item"><a href="{{ url_for('license_page') }}" class="offcanvas-link"><i class="bi bi-key me-2"></i>Manage License</a></li>
+      <li class="list-group-item"><span class="text-muted small">Expires {{ license_status.expires_at or 'Not set' }}</span></li>
     </ul>
   </div>
 </div>
